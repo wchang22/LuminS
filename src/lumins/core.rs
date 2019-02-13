@@ -1,15 +1,49 @@
 use std::fs;
 use std::path::PathBuf;
+use rayon::prelude::*;
+
+const NUM_THREADS: usize = 7;
 
 pub fn synchronize(src: &String, dest: &String) {
+    let files = get_all_files(src);
+
+    copy_files(&files, src, dest, NUM_THREADS);
+}
+
+fn copy_files(files: &Vec<PathBuf>, src: &String, dest: &String, num_threads: usize) {
+    if files.len() <= num_threads {
+        files.par_iter().for_each(|file| {
+            let mut dest_file = PathBuf::new();
+            dest_file.push(&dest);
+            dest_file.push(file.strip_prefix(&src).unwrap());
+
+            fs::create_dir_all(dest_file.parent().unwrap()).unwrap();
+            fs::copy(file, dest_file).unwrap();
+        });
+    } else {
+        files.par_chunks(files.len() / num_threads).for_each(|slice| {
+            for file in slice.iter() {
+                let mut dest_file = PathBuf::new();
+                dest_file.push(&dest);
+                dest_file.push(file.strip_prefix(&src).unwrap());
+                fs::create_dir_all(dest_file.parent().unwrap()).unwrap();
+                fs::copy(file, dest_file).unwrap();
+            }
+        });
+    }
+}
+
+fn get_all_files(src: &String) -> Vec<PathBuf> {
     let dir = fs::read_dir(src);
     let dir = match dir {
         Ok(r) => r,
         Err(e) => {
             eprintln!("{}", e);
-            return;
+            return Vec::new();
         }
     };
+
+    let mut files = Vec::new();
 
     for file in dir {
         if file.is_err() {
@@ -21,7 +55,7 @@ pub fn synchronize(src: &String, dest: &String) {
         let metadata = fs::metadata(file.path());
 
         if metadata.is_err() {
-            eprintln!("{}", metadata.err().unwrap());
+            eprintln!("{:?} {}", file.path(), metadata.err().unwrap());
             continue;
         }
 
@@ -29,19 +63,11 @@ pub fn synchronize(src: &String, dest: &String) {
 
         if metadata.is_dir() {
             let path = file.path().into_os_string().into_string().unwrap();
-            let mut new_dest = String::new();
-            new_dest.push_str(&dest);
-            new_dest.push_str("/");
-            new_dest.push_str(file.path().strip_prefix(&src).unwrap().to_str().unwrap());
-
-            fs::create_dir_all(&new_dest).unwrap();
-
-            synchronize(&path, &new_dest);
+            files.extend(get_all_files(&path));
         } else {
-            let mut dest_file = PathBuf::new();
-            dest_file.push(&dest);
-            dest_file.push(file.path().file_name().unwrap());
-            fs::copy(file.path(), dest_file).unwrap();
+            files.push(file.path());
         }
     }
+
+    files
 }
