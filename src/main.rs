@@ -7,5 +7,5 @@ fn main() {
         Err(_) => return,
     };
 
-    core::synchronize(src, dest);
+    core::synchronize(&src, &dest);
 }

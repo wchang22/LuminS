@@ -5,7 +5,7 @@ pub fn parse_args() -> Result<(String, String), ()> {
     let mut args = env::args();
 
     if args.len() != 3 {
-        eprintln!("Usage: lumins [OPTION]... SOURCE... DESTINATION");
+        println!("Usage: lumins [OPTION]... SOURCE... DESTINATION");
         return Err(());
     }
 
