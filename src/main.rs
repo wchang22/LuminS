@@ -1,5 +1,5 @@
 mod lumins;
-use lumins::{parse, core};
+use lumins::{core, parse};
 
 fn main() {
     let (src, dest) = match parse::parse_args() {

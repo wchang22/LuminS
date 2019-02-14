@@ -27,19 +27,12 @@ pub fn parse_args() -> Result<(String, String), ()> {
         }
     };
 
-    let dest_metadata = fs::metadata(&dest);
-    match dest_metadata {
-        Ok(m) => {
-            if !m.is_dir() {
-                eprintln!("Destination Error: {} is not a directory", &src);
-                return Err(());
-            }
-        }
-        Err(e) => {
-            eprintln!("Destination Error: {}", e);
-            return Err(());
-        }
-    };
+    let create_dest = fs::create_dir_all(&dest);
+
+    if create_dest.is_err() {
+        eprintln!("Destination Error: {}", create_dest.err().unwrap());
+        return Err(());
+    }
 
     Ok((src, dest))
 }
