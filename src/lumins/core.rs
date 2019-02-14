@@ -2,16 +2,16 @@ use rayon::prelude::*;
 use std::fs;
 use std::path::PathBuf;
 
-const NUM_THREADS: usize = 10;
+const CHUNK_SIZE: usize = 256;
 
 pub fn synchronize(src: &String, dest: &String) {
     let files = get_all_files(&PathBuf::from(src));
 
-    copy_files(&files, src, dest, NUM_THREADS);
+    copy_files(&files, src, dest, CHUNK_SIZE);
 }
 
-fn copy_files(files: &Vec<PathBuf>, src: &String, dest: &String, num_threads: usize) {
-    files.par_chunks(256).for_each(|slice| {
+fn copy_files(files: &Vec<PathBuf>, src: &String, dest: &String, chunk_size: usize) {
+    files.par_chunks(chunk_size).for_each(|slice| {
         for file in slice {
             let mut dest_file = PathBuf::from(dest);
             let rest = match file.strip_prefix(src) {
