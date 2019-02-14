@@ -106,6 +106,6 @@ mod test {
         let test_dest = fs::read_dir("test_dest");
         assert_eq!(test_dest.is_ok(), true);
 
-        fs::remove_dir("test_dest");
+        fs::remove_dir("test_dest").unwrap();
     }
 }

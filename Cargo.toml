@@ -6,4 +6,4 @@ edition = "2018"
 
 [dependencies]
 rayon = "1.0.3"
-checksums = "0.5.5"
+blake2 = "0.8.0"
