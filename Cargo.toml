@@ -5,6 +5,5 @@ authors = ["Wesley Chang <wesleycanada@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-users = "0.8.1"
 rayon = "1.0.3"
-# checksums = "0.5.5"
+checksums = "0.5.5"
