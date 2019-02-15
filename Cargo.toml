@@ -7,3 +7,4 @@ edition = "2018"
 [dependencies]
 rayon = "1.0.3"
 blake2 = "0.8.0"
+rayon-hash = "0.4.1"

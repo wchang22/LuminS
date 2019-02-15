@@ -92,6 +92,16 @@ mod test {
     }
 
     #[test]
+    fn fail_create_dest() {
+        let args = vec![
+            String::from("lumins"),
+            String::from("."),
+            String::from("/asdf"),
+        ];
+        assert_eq!(parse_args(&args), Err(()));
+    }
+
+    #[test]
     fn parse_success() {
         let args = vec![
             String::from("lumins"),
