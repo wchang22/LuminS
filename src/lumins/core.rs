@@ -8,7 +8,7 @@ use rayon_hash::HashSet;
 
 trait FileOps {
     fn path(&self) -> &PathBuf;
-    fn remove(&self, path: &PathBuf) -> Result<(), io::Error>;
+    fn remove(&self, path: &PathBuf);
     fn copy(&self, src: &PathBuf, dest: &PathBuf);
 }
 
@@ -22,8 +22,15 @@ impl FileOps for File {
     fn path(&self) -> &PathBuf {
         &self.path
     }
-    fn remove(&self, path: &PathBuf) -> Result<(), io::Error> {
-        fs::remove_file(&path)
+    fn remove(&self, path: &PathBuf){
+        let delete_file = fs::remove_file(&path);
+        if delete_file.is_err() {
+            eprintln!(
+                "Error -- Deleting File {:?}: {}",
+                path,
+                delete_file.err().unwrap()
+            );
+        }
     }
     fn copy(&self, src: &PathBuf, dest: &PathBuf) {
         let copy = fs::copy(&src, &dest);
@@ -42,8 +49,16 @@ impl FileOps for Dir {
     fn path(&self) -> &PathBuf {
         &self.path
     }
-    fn remove(&self, path: &PathBuf) -> Result<(), io::Error> {
-        fs::remove_dir_all(&path)
+    fn remove(&self, path: &PathBuf) {
+        let delete_dir = fs::remove_dir(&path);
+        if delete_dir.is_err() {
+            eprintln!(
+                "Error -- Deleting Dir {:?}: {}",
+                path,
+                delete_dir.err().unwrap()
+            );
+        }
+
     }
     fn copy(&self, _src: &PathBuf, dest: &PathBuf) {
         let create_dir = fs::create_dir_all(&dest);
@@ -74,7 +89,12 @@ pub fn synchronize(src: &String, dest: &String) {
     copy_files(files_to_copy, &src, &dest);
     compare_files(files_to_compare, &src, &dest);
 
-    delete_files(dirs_to_delete, &dest);
+    let mut dirs_to_delete: Vec<&Dir> = Vec::from_par_iter(dirs_to_delete);
+    dirs_to_delete.par_sort_unstable_by(|a, b| {
+        b.path.components().count().cmp(&a.path.components().count())
+    });
+
+    delete_files_sequential(dirs_to_delete, &dest);
 }
 
 fn compare_files<'a, T, S>(files_to_compare: T, src: &String, dest: &String)
@@ -135,15 +155,21 @@ where
         let mut path = PathBuf::from(&location);
         path.push(file.path());
 
-        let delete_file: Result<(), io::Error> = file.remove(&path);
-        if delete_file.is_err() {
-            eprintln!(
-                "Error -- Deleting {:?}: {}",
-                file.path(),
-                delete_file.err().unwrap()
-            );
-        }
+        file.remove(&path);
     });
+}
+
+fn delete_files_sequential<'a, T, S>(files_to_delete: T, location: &String)
+    where
+        T: IntoIterator<Item = &'a S>,
+        S: FileOps + 'a,
+{
+    for file in files_to_delete {
+        let mut path = PathBuf::from(&location);
+        path.push(file.path());
+
+        file.remove(&path);
+    }
 }
 
 fn hash_file<S>(file_to_hash: &S, location: &String) -> Option<Vec<u8>>
