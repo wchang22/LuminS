@@ -22,7 +22,7 @@ impl FileOps for File {
     fn path(&self) -> &PathBuf {
         &self.path
     }
-    fn remove(&self, path: &PathBuf){
+    fn remove(&self, path: &PathBuf) {
         let delete_file = fs::remove_file(&path);
         if delete_file.is_err() {
             eprintln!(
@@ -58,7 +58,6 @@ impl FileOps for Dir {
                 delete_dir.err().unwrap()
             );
         }
-
     }
     fn copy(&self, _src: &PathBuf, dest: &PathBuf) {
         let create_dir = fs::create_dir_all(&dest);
@@ -72,7 +71,7 @@ impl FileOps for Dir {
     }
 }
 
-pub fn synchronize(src: &String, dest: &String) {
+pub fn synchronize(src: &str, dest: &str) {
     let (src_files, src_dirs) = get_all_files(&PathBuf::from(&src), &src);
     let (dest_files, dest_dirs) = get_all_files(&PathBuf::from(&dest), &dest);
 
@@ -91,13 +90,16 @@ pub fn synchronize(src: &String, dest: &String) {
 
     let mut dirs_to_delete: Vec<&Dir> = Vec::from_par_iter(dirs_to_delete);
     dirs_to_delete.par_sort_unstable_by(|a, b| {
-        b.path.components().count().cmp(&a.path.components().count())
+        b.path
+            .components()
+            .count()
+            .cmp(&a.path.components().count())
     });
 
     delete_files_sequential(dirs_to_delete, &dest);
 }
 
-fn compare_files<'a, T, S>(files_to_compare: T, src: &String, dest: &String)
+fn compare_files<'a, T, S>(files_to_compare: T, src: &str, dest: &str)
 where
     T: ParallelIterator<Item = &'a S>,
     S: FileOps + Sync + 'a,
@@ -110,7 +112,7 @@ where
     });
 }
 
-fn compare_file<'a, S>(file_to_compare: &S, src: &String, dest: &String) -> bool
+fn compare_file<S>(file_to_compare: &S, src: &str, dest: &str) -> bool
 where
     S: FileOps,
 {
@@ -124,7 +126,7 @@ where
     src_file_hash == dest_file_hash
 }
 
-fn copy_files<'a, T, S>(files_to_copy: T, src: &String, dest: &String)
+fn copy_files<'a, T, S>(files_to_copy: T, src: &str, dest: &str)
 where
     T: ParallelIterator<Item = &'a S>,
     S: FileOps + Sync + 'a,
@@ -134,7 +136,7 @@ where
     });
 }
 
-fn copy_file<S>(file_to_copy: &S, src: &String, dest: &String)
+fn copy_file<S>(file_to_copy: &S, src: &str, dest: &str)
 where
     S: FileOps,
 {
@@ -146,7 +148,7 @@ where
     file_to_copy.copy(&src_file, &dest_file);
 }
 
-fn delete_files<'a, T, S>(files_to_delete: T, location: &String)
+fn delete_files<'a, T, S>(files_to_delete: T, location: &str)
 where
     T: ParallelIterator<Item = &'a S>,
     S: FileOps + Sync + 'a,
@@ -159,10 +161,10 @@ where
     });
 }
 
-fn delete_files_sequential<'a, T, S>(files_to_delete: T, location: &String)
-    where
-        T: IntoIterator<Item = &'a S>,
-        S: FileOps + 'a,
+fn delete_files_sequential<'a, T, S>(files_to_delete: T, location: &str)
+where
+    T: IntoIterator<Item = &'a S>,
+    S: FileOps + 'a,
 {
     for file in files_to_delete {
         let mut path = PathBuf::from(&location);
@@ -172,7 +174,7 @@ fn delete_files_sequential<'a, T, S>(files_to_delete: T, location: &String)
     }
 }
 
-fn hash_file<S>(file_to_hash: &S, location: &String) -> Option<Vec<u8>>
+fn hash_file<S>(file_to_hash: &S, location: &str) -> Option<Vec<u8>>
 where
     S: FileOps,
 {
@@ -206,7 +208,7 @@ where
     Some(hasher.result().to_vec())
 }
 
-fn get_all_files(src: &PathBuf, base: &String) -> (HashSet<File>, HashSet<Dir>) {
+fn get_all_files(src: &PathBuf, base: &str) -> (HashSet<File>, HashSet<Dir>) {
     let dir = src.read_dir();
     let dir = match dir {
         Ok(r) => r,

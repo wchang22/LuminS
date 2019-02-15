@@ -9,7 +9,7 @@ use std::fs;
 /// * `args` do not contain source and destination folders
 /// * The source folder is not a valid directory
 /// * The destination folder could not be created
-pub fn parse_args(args: &Vec<String>) -> Result<(String, String), ()> {
+pub fn parse_args(args: &[String]) -> Result<(String, String), ()> {
     if args.len() != 3 {
         println!("Usage: lumins SOURCE... DESTINATION");
         return Err(());
