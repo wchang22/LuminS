@@ -12,7 +12,7 @@ pub trait FileOps {
     fn copy(&self, src: &PathBuf, dest: &PathBuf);
 }
 
-#[derive(Hash, Eq, PartialEq)]
+#[derive(Hash, Eq, PartialEq, Debug)]
 pub struct File {
     path: PathBuf,
     size: u64,
@@ -40,7 +40,7 @@ impl FileOps for File {
     }
 }
 
-#[derive(Hash, Eq, PartialEq)]
+#[derive(Hash, Eq, PartialEq, Debug)]
 pub struct Dir {
     path: PathBuf,
 }
@@ -71,6 +71,7 @@ impl FileOps for Dir {
     }
 }
 
+#[derive(Eq, PartialEq, Debug)]
 pub struct FileSets {
     files: HashSet<File>,
     dirs: HashSet<Dir>,
@@ -213,14 +214,30 @@ where
     files_to_sort
 }
 
-pub fn get_all_files(src: &PathBuf, base: &str) -> FileSets {
-    let dir = src.read_dir();
-    if dir.is_err() {
-        eprintln!("{}", dir.err().unwrap());
-        return FileSets::new();
-    }
+/// Recursively traverses a directory and all its subdirectories and returns
+/// a FileSets that contains all files and all directories
+///
+/// # Arguments
+/// * `src`: directory to traverse
+///
+/// # Returns
+/// * Ok: A `FileSets` containing a set of files a set of directories
+/// * Error: If `src` is an invalid directory
+pub fn get_all_files(src: &str) -> Result<FileSets, io::Error> {
+    get_all_files_helper(&PathBuf::from(&src), &src)
+}
 
-    let dir = dir.ok().unwrap();
+/// Recursive helper for `get_all_files`
+///
+/// # Arguments
+/// * `src`: directory to traverse
+/// * `base`: directory to traverse, used for recursive calls
+///
+/// # Returns
+/// * Ok: A `FileSets` containing a set of files a set of directories
+/// * Error: If `src` is an invalid directory
+fn get_all_files_helper(src: &PathBuf, base: &str) -> Result<FileSets, io::Error> {
+    let dir = src.read_dir()?;
 
     let mut files = HashSet::new();
     let mut dirs = HashSet::new();
@@ -245,27 +262,35 @@ pub fn get_all_files(src: &PathBuf, base: &str) -> FileSets {
 
         let metadata = metadata.unwrap();
 
+        // Only copy files and dirs -- no symlinks
         if !metadata.is_dir() && !metadata.is_file() {
             continue;
         }
 
         let path = file.path();
-        let relative_path = path.strip_prefix(base);
-        if relative_path.is_err() {
-            eprintln!("Error -- Stripping base: {}", relative_path.err().unwrap());
-            continue;
-        }
-
-        let relative_path = relative_path.unwrap();
+        // This is safe to unwrap, since `get_all_files` always calls this helper
+        // with `base` equal to `src`
+        let relative_path = path.strip_prefix(base).unwrap();
 
         if metadata.is_dir() {
             dirs.insert(Dir {
                 path: relative_path.to_path_buf(),
             });
-            let file_sets = get_all_files(&file.path(), base);
+
+            // Recursively call `get_all_files_helper` on the subdirectory
+            let file_sets = get_all_files_helper(&file.path(), base);
+
+            if file_sets.is_err() {
+                eprintln!("Error - Retrieving files: {}", file_sets.err().unwrap());
+                continue;
+            }
+            let file_sets = file_sets.unwrap();
+
+            // Add subdirectory subdirectories and files to sets
             files.extend(file_sets.files);
             dirs.extend(file_sets.dirs);
         } else {
+            // if file is a file
             files.insert(File {
                 path: relative_path.to_path_buf(),
                 size: metadata.len(),
@@ -273,5 +298,182 @@ pub fn get_all_files(src: &PathBuf, base: &str) -> FileSets {
         }
     }
 
-    FileSets::with(files, dirs)
+    Ok(FileSets::with(files, dirs))
+}
+
+#[cfg(test)]
+mod test_get_all_files {
+    use super::*;
+    use std::os::unix::fs::symlink;
+    use std::process::Command;
+
+    #[test]
+    fn invalid_dir() {
+        assert_eq!(get_all_files("/?").is_err(), true);
+    }
+
+    #[cfg(target_family = "unix")]
+    #[test]
+    fn dir_insufficient_permissions() {
+        assert_eq!(get_all_files("/root").is_err(), true);
+    }
+
+    #[test]
+    fn empty_dir() {
+        const TEST_DIR: &str = "test_get_all_files_empty_dir";
+
+        fs::create_dir(TEST_DIR).unwrap();
+
+        let file_sets = get_all_files(TEST_DIR).unwrap();
+
+        assert_eq!(file_sets.files(), &HashSet::new());
+        assert_eq!(file_sets.dirs(), &HashSet::new());
+
+        fs::remove_dir(TEST_DIR).unwrap();
+    }
+
+    #[test]
+    fn single_dir() {
+        const TEST_DIR: &str = "test_get_all_files_single_dir";
+        const TEST_SUB_DIR: &str = "test";
+
+        fs::create_dir_all([TEST_DIR, TEST_SUB_DIR].join("/")).unwrap();
+
+        let file_sets = get_all_files(&TEST_DIR).unwrap();
+        let mut dir_set = HashSet::new();
+        dir_set.insert(Dir {
+            path: PathBuf::from(&TEST_SUB_DIR),
+        });
+
+        assert_eq!(file_sets.files(), &HashSet::new());
+        assert_eq!(file_sets.dirs(), &dir_set);
+
+        fs::remove_dir_all(&TEST_DIR).unwrap();
+    }
+
+    #[test]
+    fn single_file() {
+        const TEST_DIR: &str = "test_get_all_files_single_file";
+        const TEST_FILE: &str = "file.txt";
+
+        fs::create_dir_all(TEST_DIR).unwrap();
+
+        fs::File::create([TEST_DIR, TEST_FILE].join("/")).unwrap();
+        fs::write([TEST_DIR, TEST_FILE].join("/"), b"1234").unwrap();
+
+        let file_sets = get_all_files(TEST_DIR).unwrap();
+        let mut file_set = HashSet::new();
+        file_set.insert(File {
+            path: PathBuf::from(TEST_FILE),
+            size: 4,
+        });
+
+        assert_eq!(file_sets.files(), &file_set);
+        assert_eq!(file_sets.dirs(), &HashSet::new());
+
+        fs::remove_dir_all(TEST_DIR).unwrap();
+    }
+
+    #[cfg(target_family = "unix")]
+    #[test]
+    fn single_symlink() {
+        const TEST_DIR: &str = "test_get_all_files_single_symlink";
+        const TEST_LINK: &str = "test_get_all_files_single_symlink/file";
+        const TEST_FILE: &str = "test_get_all_files_single_symlink/test.txt";
+
+        fs::create_dir_all(TEST_DIR).unwrap();
+        symlink(TEST_FILE, TEST_LINK).unwrap();
+
+        let file_sets = get_all_files(TEST_DIR).unwrap();
+
+        assert_eq!(file_sets.files(), &HashSet::new());
+        assert_eq!(file_sets.dirs(), &HashSet::new());
+
+        fs::remove_dir_all(TEST_DIR).unwrap();
+    }
+
+    #[test]
+    fn multi_level() {
+        const TEST_DIR: &str = "test_get_all_files_multi_level";
+        const SUB_DIRS: [&str; 2] = ["dir1", "dir1/dir2"];
+        const TEST_FILES: [&str; 3] = ["file.txt", "dir1/file.txt", "dir1/dir2/file2.txt"];
+        const TEST_DATA: [&[u8]; 3] = [b"1", b"", b"1234567890"];
+
+        fs::create_dir_all([TEST_DIR, SUB_DIRS[1]].join("/")).unwrap();
+
+        for i in 0..TEST_FILES.len() {
+            let path = [TEST_DIR, TEST_FILES[i]].join("/");
+            fs::File::create(&path).unwrap();
+            fs::write(&path, TEST_DATA[i]).unwrap();
+        }
+
+        let file_sets = get_all_files(TEST_DIR).unwrap();
+        let mut file_set = HashSet::new();
+        let mut dir_set = HashSet::new();
+
+        for i in 0..TEST_FILES.len() {
+            file_set.insert(File {
+                path: PathBuf::from(TEST_FILES[i]),
+                size: TEST_DATA[i].len() as u64,
+            });
+        }
+
+        for i in 0..SUB_DIRS.len() {
+            dir_set.insert(Dir {
+                path: PathBuf::from(SUB_DIRS[i]),
+            });
+        }
+
+        assert_eq!(file_sets.files(), &file_set);
+        assert_eq!(file_sets.dirs(), &dir_set);
+
+        fs::remove_dir_all(TEST_DIR).unwrap();
+    }
+
+    #[cfg(target_family = "unix")]
+    #[test]
+    fn multi_level_insufficient_permissions() {
+        const TEST_DIR: &str = "test_get_all_files_multi_level_insufficient_permissions";
+        const SUB_DIR: &str = "dir";
+        const TEST_FILE: &str = "file.txt";
+
+        let file_path = [TEST_DIR, TEST_FILE].join("/");
+        let dir_path = [TEST_DIR, SUB_DIR].join("/");
+
+        fs::create_dir_all(&dir_path).unwrap();
+        fs::File::create(&file_path).unwrap();
+
+        Command::new("chmod")
+            .arg("000")
+            .arg(&file_path)
+            .output()
+            .unwrap();
+        Command::new("chmod")
+            .arg("000")
+            .arg(&dir_path)
+            .output()
+            .unwrap();
+
+        let file_sets = get_all_files(TEST_DIR).unwrap();
+
+        let mut file_set = HashSet::new();
+        file_set.insert(File {
+            path: PathBuf::from(&TEST_FILE),
+            size: 0,
+        });
+        let mut dir_set = HashSet::new();
+        dir_set.insert(Dir {
+            path: PathBuf::from(&SUB_DIR),
+        });
+
+        assert_eq!(file_sets.files(), &file_set);
+        assert_eq!(file_sets.dirs(), &dir_set);
+
+        Command::new("chmod")
+            .arg("777")
+            .arg(&dir_path)
+            .output()
+            .unwrap();
+        fs::remove_dir_all(TEST_DIR).unwrap();
+    }
 }

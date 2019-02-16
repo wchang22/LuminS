@@ -1,7 +1,7 @@
 use std::env;
 
 mod lumins;
-pub use lumins::{core, parse};
+pub use lumins::{core, file_ops, parse};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -11,5 +11,8 @@ fn main() {
         Err(_) => return,
     };
 
-    core::synchronize(&src, &dest);
+    let result = core::synchronize(&src, &dest);
+    if result.is_err() {
+        eprintln!("{}", result.err().unwrap());
+    }
 }

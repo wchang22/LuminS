@@ -103,19 +103,22 @@ mod test {
 
     #[test]
     fn parse_success() {
+        const TEST_SRC: &str = "./src";
+        const TEST_DIR: &str = "parse_success";
+
         let args = vec![
             String::from("lumins"),
-            String::from("src"),
-            String::from("test_dest"),
+            String::from(TEST_SRC),
+            String::from(TEST_DIR),
         ];
         assert_eq!(
             parse_args(&args),
-            Ok((String::from("src"), String::from("test_dest")))
+            Ok((String::from(TEST_SRC), String::from(TEST_DIR)))
         );
 
-        let test_dest = fs::read_dir("test_dest");
+        let test_dest = fs::read_dir(TEST_DIR);
         assert_eq!(test_dest.is_ok(), true);
 
-        fs::remove_dir("test_dest").unwrap();
+        fs::remove_dir(TEST_DIR).unwrap();
     }
 }

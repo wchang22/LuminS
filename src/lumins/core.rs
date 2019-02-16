@@ -1,13 +1,13 @@
-use std::path::PathBuf;
+use std::io;
 
 use crate::lumins::file_ops;
 
-pub fn synchronize(src: &str, dest: &str) {
-    let src_file_sets = file_ops::get_all_files(&PathBuf::from(&src), &src);
+pub fn synchronize(src: &str, dest: &str) -> Result<(), io::Error> {
+    let src_file_sets = file_ops::get_all_files(&src)?;
     let src_files = src_file_sets.files();
     let src_dirs = src_file_sets.dirs();
 
-    let dest_file_sets = file_ops::get_all_files(&PathBuf::from(&dest), &dest);
+    let dest_file_sets = file_ops::get_all_files(&dest)?;
     let dest_files = dest_file_sets.files();
     let dest_dirs = dest_file_sets.dirs();
 
@@ -27,4 +27,6 @@ pub fn synchronize(src: &str, dest: &str) {
     let dirs_to_delete: Vec<&file_ops::Dir> = file_ops::sort_files(dirs_to_delete);
 
     file_ops::delete_files_sequential(dirs_to_delete, &dest);
+
+    Ok(())
 }
