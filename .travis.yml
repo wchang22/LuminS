@@ -2,6 +2,11 @@ language: rust
 
 sudo: required
 
+os:
+  - linux
+  - osx
+  - windows
+
 rust:
   - stable
   - beta
