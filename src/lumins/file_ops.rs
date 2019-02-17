@@ -111,6 +111,14 @@ where
     src_file_hash.is_some() && (src_file_hash == dest_file_hash)
 }
 
+/// Copies all given files from `src` to `dest` in parallel
+///
+/// # Arguments
+/// `files_to_copy`: files to copy
+/// * `src`: base directory of the files to copy from, such that for all `file` in
+/// `files_to_copy`, `src + file.path()` is the absolute path of the source file
+/// * `dest`: base directory of the files to copy to, such that for all `file` in
+/// `files_to_copy`, `dest + file.path()` is the absolute path of the destination file
 pub fn copy_files<'a, T, S>(files_to_copy: T, src: &str, dest: &str)
 where
     T: ParallelIterator<Item = &'a S>,
@@ -121,6 +129,14 @@ where
     });
 }
 
+/// Copies a single file from `src` to `dest`
+///
+/// # Arguments
+/// `files_to_copy`: file to copy
+/// * `src`: base directory of the files to copy from, such that `src + file_to_copy.path()`
+/// is the absolute path of the source file
+/// * `dest`: base directory of the files to copy to, such that `dest + file.path()`
+/// is the absolute path of the destination file
 fn copy_file<S>(file_to_copy: &S, src: &str, dest: &str)
 where
     S: FileOps,
@@ -337,7 +353,6 @@ fn get_all_files_helper(src: &PathBuf, base: &str) -> Result<FileSets, io::Error
 #[cfg(test)]
 mod test_get_all_files {
     use super::*;
-    use std::os::unix::fs::symlink;
     use std::process::Command;
 
     #[test]
@@ -410,6 +425,7 @@ mod test_get_all_files {
     #[cfg(target_family = "unix")]
     #[test]
     fn single_symlink() {
+        use std::os::unix::fs::symlink;
         const TEST_DIR: &str = "test_get_all_files_single_symlink";
         const TEST_LINK: &str = "test_get_all_files_single_symlink/file";
         const TEST_FILE: &str = "test_get_all_files_single_symlink/test.txt";
@@ -477,13 +493,11 @@ mod test_get_all_files {
         fs::File::create(&file_path).unwrap();
 
         Command::new("chmod")
-            .arg("000")
-            .arg(&file_path)
+            .args(&["000", &file_path])
             .output()
             .unwrap();
         Command::new("chmod")
-            .arg("000")
-            .arg(&dir_path)
+            .args(&["000", &dir_path])
             .output()
             .unwrap();
 
@@ -504,7 +518,7 @@ mod test_get_all_files {
 
         Command::new("chmod")
             .arg("777")
-            .arg(&dir_path)
+            .args(&["777", &dir_path])
             .output()
             .unwrap();
         fs::remove_dir_all(TEST_DIR).unwrap();
@@ -570,7 +584,10 @@ mod test_sort_files {
         multi_dir.insert(dir3.clone());
         let expected: Vec<&Dir> = vec![&dir2, &dir3, &dir1];
 
-        assert_eq!(sort_files(multi_dir.par_iter()).get(2).unwrap(), &expected[2]);
+        assert_eq!(
+            sort_files(multi_dir.par_iter()).get(2).unwrap(),
+            &expected[2]
+        );
     }
 }
 
@@ -704,10 +721,13 @@ mod test_delete_files {
         delete_files(files_to_delete.par_iter(), TEST_DIR);
         delete_files_sequential(files_to_delete_sequential.into_iter(), TEST_DIR);
 
-        assert_eq!(get_all_files(TEST_DIR).unwrap(), FileSets {
-            files: file_set,
-            dirs: HashSet::new(),
-        });
+        assert_eq!(
+            get_all_files(TEST_DIR).unwrap(),
+            FileSets {
+                files: file_set,
+                dirs: HashSet::new(),
+            }
+        );
 
         fs::remove_dir_all(TEST_DIR).unwrap();
     }
@@ -742,10 +762,13 @@ mod test_delete_files {
         delete_files(files_to_delete.par_iter(), TEST_DIR);
         delete_files_sequential(files_to_delete_sequential.into_iter(), TEST_DIR);
 
-        assert_eq!(get_all_files(TEST_DIR).unwrap(), FileSets {
-            files: file_set,
-            dirs: HashSet::new(),
-        });
+        assert_eq!(
+            get_all_files(TEST_DIR).unwrap(),
+            FileSets {
+                files: file_set,
+                dirs: HashSet::new(),
+            }
+        );
 
         fs::remove_dir_all(TEST_DIR).unwrap();
     }
@@ -783,14 +806,20 @@ mod test_delete_files {
         delete_files(files_to_delete.par_iter(), TEST_DIR);
         delete_files_sequential(files_to_delete_sequential.into_iter(), TEST_DIR_SEQ);
 
-        assert_eq!(get_all_files(TEST_DIR).unwrap(), FileSets {
-            files: HashSet::new(),
-            dirs: HashSet::new(),
-        });
-        assert_eq!(get_all_files(TEST_DIR_SEQ).unwrap(), FileSets {
-            files: HashSet::new(),
-            dirs: HashSet::new(),
-        });
+        assert_eq!(
+            get_all_files(TEST_DIR).unwrap(),
+            FileSets {
+                files: HashSet::new(),
+                dirs: HashSet::new(),
+            }
+        );
+        assert_eq!(
+            get_all_files(TEST_DIR_SEQ).unwrap(),
+            FileSets {
+                files: HashSet::new(),
+                dirs: HashSet::new(),
+            }
+        );
 
         fs::remove_dir_all(TEST_DIR).unwrap();
         fs::remove_dir_all(TEST_DIR_SEQ).unwrap();
@@ -833,16 +862,186 @@ mod test_delete_files {
             path: PathBuf::from([TEST_SUB_DIRS[0], TEST_SUB_DIRS[1]].join("/")),
         });
 
-        assert_eq!(get_all_files(TEST_DIR).unwrap(), FileSets {
-            files: HashSet::new(),
-            dirs: file_set.clone(),
-        });
-        assert_eq!(get_all_files(TEST_DIR_SEQ).unwrap(), FileSets {
-            files: HashSet::new(),
-            dirs: file_set,
-        });
+        assert_eq!(
+            get_all_files(TEST_DIR).unwrap(),
+            FileSets {
+                files: HashSet::new(),
+                dirs: file_set.clone(),
+            }
+        );
+        assert_eq!(
+            get_all_files(TEST_DIR_SEQ).unwrap(),
+            FileSets {
+                files: HashSet::new(),
+                dirs: file_set,
+            }
+        );
 
         fs::remove_dir_all(TEST_DIR).unwrap();
         fs::remove_dir_all(TEST_DIR_SEQ).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod test_copy_files {
+    use super::*;
+    use std::process::Command;
+
+    #[test]
+    fn no_files() {
+        const TEST_DIR: &str = "test_copy_files_no_files";
+        const TEST_DIR_OUT: &str = "test_copy_files_no_files_out";
+
+        fs::create_dir_all(TEST_DIR).unwrap();
+        fs::create_dir_all(TEST_DIR_OUT).unwrap();
+
+        copy_files(HashSet::<File>::new().par_iter(), TEST_DIR, TEST_DIR_OUT);
+
+        assert_eq!(get_all_files(TEST_DIR_OUT).unwrap(), FileSets {
+            files: HashSet::new(),
+            dirs: HashSet::new(),
+        });
+
+        fs::remove_dir_all(TEST_DIR).unwrap();
+        fs::remove_dir_all(TEST_DIR_OUT).unwrap();
+    }
+
+    #[test]
+    fn regular_files_dirs() {
+        const TEST_DIR: &str = "src";
+        const TEST_DIR_OUT: &str = "test_copy_regular_files_dirs_out";
+
+        fs::create_dir_all(TEST_DIR_OUT).unwrap();
+
+        copy_files(get_all_files(TEST_DIR).unwrap().dirs().par_iter(), TEST_DIR, TEST_DIR_OUT);
+        copy_files(get_all_files(TEST_DIR).unwrap().files().par_iter(), TEST_DIR, TEST_DIR_OUT);
+
+        assert_eq!(get_all_files(TEST_DIR_OUT).unwrap(), get_all_files(TEST_DIR).unwrap());
+
+        fs::remove_dir_all(TEST_DIR_OUT).unwrap();
+    }
+
+    #[test]
+    #[cfg(target_family = "unix")]
+    fn insufficient_output_permissions() {
+        const TEST_DIR: &str = "src";
+        const TEST_DIR_OUT: &str = "test_copy_insufficient_output_permissions_out";
+        const SUB_DIR: &str = "lumins";
+
+        fs::create_dir_all([TEST_DIR_OUT, SUB_DIR].join("/")).unwrap();
+        fs::File::create([TEST_DIR_OUT, "main.rs"].join("/")).unwrap();
+        Command::new("chmod")
+            .arg("000")
+            .arg([TEST_DIR_OUT, SUB_DIR].join("/"))
+            .output()
+            .unwrap();
+        Command::new("chmod")
+            .arg("000")
+            .arg([TEST_DIR_OUT, "main.rs"].join("/"))
+            .output()
+            .unwrap();
+
+        copy_files(get_all_files(TEST_DIR).unwrap().dirs().par_iter(), TEST_DIR, TEST_DIR_OUT);
+        copy_files(get_all_files(TEST_DIR).unwrap().files().par_iter(), TEST_DIR, TEST_DIR_OUT);
+
+        let mut files = HashSet::new();
+        files.insert(File {
+            path: PathBuf::from("main.rs"),
+            size: 0,
+        });
+        let mut dirs = HashSet::new();
+        dirs.insert(Dir {
+            path: PathBuf::from("lumins"),
+        });
+
+        assert_eq!(get_all_files(TEST_DIR_OUT).unwrap(), FileSets {
+            files,
+            dirs,
+        });
+
+        Command::new("rm")
+            .arg("-rf")
+            .arg(TEST_DIR_OUT)
+            .output()
+            .unwrap();
+    }
+
+    #[test]
+    #[cfg(target_family = "unix")]
+    fn insufficient_input_permissions() {
+        const TEST_DIR: &str = "test_copy_insufficient_input_permissions";
+        const TEST_DIR_OUT: &str = "test_copy_insufficient_input_permissions_out";
+
+        fs::create_dir_all(TEST_DIR).unwrap();
+        fs::create_dir_all(TEST_DIR_OUT).unwrap();
+        Command::new("cp")
+            .args(&["-r", "src/lumins", TEST_DIR])
+            .output()
+            .unwrap();
+        Command::new("cp")
+            .args(&["src/main.rs", TEST_DIR])
+            .output()
+            .unwrap();
+        Command::new("chmod")
+            .arg("000")
+            .arg([TEST_DIR, "lumins"].join("/"))
+            .output()
+            .unwrap();
+        Command::new("chmod")
+            .arg("000")
+            .arg([TEST_DIR, "main.rs"].join("/"))
+            .output()
+            .unwrap();
+
+        copy_files(get_all_files(TEST_DIR).unwrap().dirs().par_iter(), TEST_DIR, TEST_DIR_OUT);
+        copy_files(get_all_files(TEST_DIR).unwrap().files().par_iter(), TEST_DIR, TEST_DIR_OUT);
+
+        let files = HashSet::new();
+        let mut dirs = HashSet::new();
+        dirs.insert(Dir {
+            path: PathBuf::from("lumins"),
+        });
+
+        assert_eq!(get_all_files(TEST_DIR_OUT).unwrap(), FileSets {
+            files,
+            dirs,
+        });
+
+        Command::new("chmod")
+            .arg("777")
+            .arg([TEST_DIR, "lumins"].join("/"))
+            .output()
+            .unwrap();
+        Command::new("rm")
+            .args(&["-rf", TEST_DIR])
+            .output()
+            .unwrap();
+        Command::new("rm")
+            .args(&["-rf", TEST_DIR_OUT])
+            .output()
+            .unwrap();
+    }
+
+    #[test]
+    #[cfg(target_family = "unix")]
+    fn copy_symlink() {
+        use std::os::unix::fs::symlink;
+        const TEST_DIR: &str = "test_copy_symlink";
+        const TEST_DIR_OUT: &str = "test_copy_symlink_out";
+
+        fs::create_dir_all(TEST_DIR).unwrap();
+        fs::create_dir_all(TEST_DIR_OUT).unwrap();
+        symlink("src/main.rs", [TEST_DIR, "file"].join("/")).unwrap();
+
+        copy_files(get_all_files(TEST_DIR).unwrap().dirs().par_iter(), TEST_DIR, TEST_DIR_OUT);
+        copy_files(get_all_files(TEST_DIR).unwrap().files().par_iter(), TEST_DIR, TEST_DIR_OUT);
+
+        assert_eq!(get_all_files(TEST_DIR_OUT).unwrap(), FileSets {
+            files: HashSet::new(),
+            dirs: HashSet::new(),
+        });
+
+        fs::remove_dir_all(TEST_DIR).unwrap();
+        fs::remove_dir_all(TEST_DIR_OUT).unwrap();
     }
 }
