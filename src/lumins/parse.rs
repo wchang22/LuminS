@@ -9,7 +9,7 @@ use std::fs;
 /// * `args` do not contain source and destination folders
 /// * The source folder is not a valid directory
 /// * The destination folder could not be created
-pub fn parse_args(args: &Vec<String>) -> Result<(String, String), ()> {
+pub fn parse_args(args: &[String]) -> Result<(String, String), ()> {
     if args.len() != 3 {
         println!("Usage: lumins SOURCE... DESTINATION");
         return Err(());
@@ -92,20 +92,33 @@ mod test {
     }
 
     #[test]
-    fn parse_success() {
+    fn fail_create_dest() {
         let args = vec![
             String::from("lumins"),
-            String::from("src"),
-            String::from("test_dest"),
+            String::from("."),
+            String::from("/asdf"),
+        ];
+        assert_eq!(parse_args(&args), Err(()));
+    }
+
+    #[test]
+    fn parse_success() {
+        const TEST_SRC: &str = "./src";
+        const TEST_DIR: &str = "parse_success";
+
+        let args = vec![
+            String::from("lumins"),
+            String::from(TEST_SRC),
+            String::from(TEST_DIR),
         ];
         assert_eq!(
             parse_args(&args),
-            Ok((String::from("src"), String::from("test_dest")))
+            Ok((String::from(TEST_SRC), String::from(TEST_DIR)))
         );
 
-        let test_dest = fs::read_dir("test_dest");
+        let test_dest = fs::read_dir(TEST_DIR);
         assert_eq!(test_dest.is_ok(), true);
 
-        fs::remove_dir("test_dest").unwrap();
+        fs::remove_dir(TEST_DIR).unwrap();
     }
 }

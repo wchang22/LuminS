@@ -1,129 +1,32 @@
-use std::path::PathBuf;
-use std::{fs, io};
+use std::io;
 
-use blake2::{Blake2b, Digest};
-use rayon::prelude::*;
+use crate::lumins::file_ops;
 
-const CHUNK_SIZE: usize = 256;
+pub fn synchronize(src: &str, dest: &str) -> Result<(), io::Error> {
+    let src_file_sets = file_ops::get_all_files(&src)?;
+    let src_files = src_file_sets.files();
+    let src_dirs = src_file_sets.dirs();
 
-struct HashedFile {
-    path: PathBuf,
-    hash: Option<Vec<u8>>,
-}
+    let dest_file_sets = file_ops::get_all_files(&dest)?;
+    let dest_files = dest_file_sets.files();
+    let dest_dirs = dest_file_sets.dirs();
 
-pub fn synchronize(src: &String, dest: &String) {
-    let mut files = get_all_files(&PathBuf::from(src));
-    hash_files(&mut files, CHUNK_SIZE);
+    let dirs_to_delete = dest_dirs.par_difference(&src_dirs);
+    let dirs_to_copy = src_dirs.par_difference(&dest_dirs);
 
-    copy_files(&files, src, dest, CHUNK_SIZE);
-}
+    file_ops::copy_files(dirs_to_copy, &src, &dest);
 
-fn copy_files(files: &Vec<HashedFile>, src: &String, dest: &String, chunk_size: usize) {
-    files.par_chunks(chunk_size).for_each(|chunk| {
-        for file in chunk {
-            let mut dest_file = PathBuf::from(dest);
-            let rest = match file.path.strip_prefix(src) {
-                Ok(p) => p,
-                Err(e) => {
-                    eprintln!("Error -- Stripping Prefix: {}", e);
-                    continue;
-                }
-            };
+    let files_to_delete = dest_files.par_difference(&src_files);
+    let files_to_copy = src_files.par_difference(&dest_files);
+    let files_to_compare = src_files.par_intersection(&dest_files);
 
-            dest_file.push(rest);
-            if dest_file.parent().is_some() {
-                let create_parent_dir = fs::create_dir_all(dest_file.parent().unwrap());
-                if create_parent_dir.is_err() {
-                    eprintln!(
-                        "Error -- Creating Directory {:?}: {}",
-                        dest_file.parent().unwrap(),
-                        create_parent_dir.err().unwrap()
-                    );
-                }
-            }
+    file_ops::delete_files(files_to_delete, &dest);
+    file_ops::copy_files(files_to_copy, &src, &dest);
+    file_ops::compare_and_copy_files(files_to_compare, &src, &dest);
 
-            let copy = fs::copy(&file.path, &dest_file);
-            if copy.is_err() {
-                eprintln!(
-                    "Error -- Copying {:?} to {:?}: {}",
-                    file.path,
-                    dest_file,
-                    copy.err().unwrap()
-                );
-            }
-        }
-    });
-}
+    let dirs_to_delete: Vec<&file_ops::Dir> = file_ops::sort_files(dirs_to_delete);
 
-fn hash_files(hashed_files: &mut Vec<HashedFile>, chunk_size: usize) {
-    hashed_files.par_chunks_mut(chunk_size).for_each(|chunk| {
-        for hashed_file in chunk.iter_mut() {
-            let file = fs::File::open(&hashed_file.path);
-            if file.is_err() {
-                eprintln!(
-                    "Error -- Opening File: {:?}: {}",
-                    hashed_file.path,
-                    file.err().unwrap()
-                );
-                continue;
-            }
+    file_ops::delete_files_sequential(dirs_to_delete, &dest);
 
-            let mut hasher = Blake2b::new();
-            let mut file = file.unwrap();
-
-            let hashing = io::copy(&mut file, &mut hasher);
-
-            if hashing.is_err() {
-                eprintln!(
-                    "Error -- Hashing: {:?}: {}",
-                    hashed_file.path,
-                    hashing.err().unwrap()
-                );
-                continue;
-            }
-
-            hashed_file.hash = Some(hasher.result().to_vec());
-        }
-    });
-}
-
-fn get_all_files(src: &PathBuf) -> Vec<HashedFile> {
-    let dir = src.read_dir();
-    let dir = match dir {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("{}", e);
-            return Vec::new();
-        }
-    };
-
-    let mut files = Vec::new();
-
-    for file in dir {
-        if file.is_err() {
-            eprintln!("{}", file.err().unwrap());
-            continue;
-        }
-
-        let file = file.unwrap();
-        let metadata = file.metadata();
-
-        if metadata.is_err() {
-            eprintln!("{:?} {}", file.path(), metadata.err().unwrap());
-            continue;
-        }
-
-        let metadata = metadata.unwrap();
-
-        if metadata.is_dir() {
-            files.extend(get_all_files(&file.path()));
-        } else if metadata.is_file() {
-            files.push(HashedFile {
-                path: file.path(),
-                hash: None,
-            });
-        }
-    }
-
-    files
+    Ok(())
 }
