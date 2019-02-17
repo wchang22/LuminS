@@ -4,8 +4,6 @@ sudo: required
 
 os:
   - linux
-  - osx
-  - windows
 
 rust:
   - stable

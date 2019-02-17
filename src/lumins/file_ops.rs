@@ -12,7 +12,7 @@ pub trait FileOps {
     fn copy(&self, src: &PathBuf, dest: &PathBuf);
 }
 
-#[derive(Hash, Eq, PartialEq, Debug)]
+#[derive(Hash, Eq, PartialEq, Debug, Clone)]
 pub struct File {
     path: PathBuf,
     size: u64,
@@ -40,7 +40,7 @@ impl FileOps for File {
     }
 }
 
-#[derive(Hash, Eq, PartialEq, Debug)]
+#[derive(Hash, Eq, PartialEq, Debug, Clone)]
 pub struct Dir {
     path: PathBuf,
 }
@@ -165,7 +165,45 @@ where
     }
 }
 
-fn hash_file<S>(file_to_hash: &S, location: &str) -> Option<Vec<u8>>
+/// Sorts (unstable) file paths in descending order by number of components
+///
+/// # Arguments
+/// * `files_to_sort`: files to sort
+///
+/// # Returns
+/// A vector of file paths in descending order by number of components
+///
+/// # Examples
+/// ```
+/// ["a", "a/b", "a/b/c"] becomes ["a/b/c", "a/b", "a"]
+/// ["/usr", "/", "/usr/bin", "/etc"] becomes ["/usr/bin", "/usr", "/etc", "/"]
+/// ```
+pub fn sort_files<'a, T, S>(files_to_sort: T) -> Vec<&'a S>
+where
+    T: ParallelIterator<Item = &'a S>,
+    S: FileOps + Sync + 'a,
+{
+    let mut files_to_sort = Vec::from_par_iter(files_to_sort);
+    files_to_sort.par_sort_unstable_by(|a, b| {
+        b.path()
+            .components()
+            .count()
+            .cmp(&a.path().components().count())
+    });
+    files_to_sort
+}
+
+/// Generates a hash of the given file, using the BLAKE2b hash function
+///
+/// # Arguments
+/// * `file_to_hash`: file object to hash
+/// * `location`: base directory of the file to hash, such that
+/// `location + file_to_hash.path()` is the absolute path of the file
+///
+/// # Returns
+/// * Some: The hash of the given file
+/// * Err: If the given file cannot be hashed
+pub fn hash_file<S>(file_to_hash: &S, location: &str) -> Option<Vec<u8>>
 where
     S: FileOps,
 {
@@ -197,21 +235,6 @@ where
     }
 
     Some(hasher.result().to_vec())
-}
-
-pub fn sort_files<'a, T, S>(files_to_sort: T) -> Vec<&'a S>
-where
-    T: ParallelIterator<Item = &'a S>,
-    S: FileOps + Sync + 'a,
-{
-    let mut files_to_sort = Vec::from_par_iter(files_to_sort);
-    files_to_sort.par_sort_unstable_by(|a, b| {
-        b.path()
-            .components()
-            .count()
-            .cmp(&a.path().components().count())
-    });
-    files_to_sort
 }
 
 /// Recursively traverses a directory and all its subdirectories and returns
@@ -299,6 +322,172 @@ fn get_all_files_helper(src: &PathBuf, base: &str) -> Result<FileSets, io::Error
     }
 
     Ok(FileSets::with(files, dirs))
+}
+
+#[cfg(test)]
+mod test_sort_files {
+    use super::*;
+
+    #[test]
+    fn no_dir() {
+        let no_dir: HashSet<Dir> = HashSet::new();
+        assert_eq!(sort_files(no_dir.par_iter()), Vec::<&Dir>::new());
+    }
+
+    #[test]
+    fn single_dir() {
+        let mut single_dir: HashSet<Dir> = HashSet::new();
+        let dir = Dir {
+            path: PathBuf::from("/"),
+        };
+        single_dir.insert(dir.clone());
+        let expected: Vec<&Dir> = vec![&dir];
+
+        assert_eq!(sort_files(single_dir.par_iter()), expected);
+    }
+
+    #[test]
+    fn multi_dir_unique() {
+        let mut multi_dir: HashSet<Dir> = HashSet::new();
+        let dir1 = Dir {
+            path: PathBuf::from("/"),
+        };
+        let dir2 = Dir {
+            path: PathBuf::from("/a"),
+        };
+        let dir3 = Dir {
+            path: PathBuf::from("/a/b"),
+        };
+        multi_dir.insert(dir1.clone());
+        multi_dir.insert(dir2.clone());
+        multi_dir.insert(dir3.clone());
+        let expected: Vec<&Dir> = vec![&dir3, &dir2, &dir1];
+
+        assert_eq!(sort_files(multi_dir.par_iter()), expected);
+    }
+
+    #[test]
+    fn multi_dir() {
+        let mut multi_dir: HashSet<Dir> = HashSet::new();
+        let dir1 = Dir {
+            path: PathBuf::from("/"),
+        };
+        let dir2 = Dir {
+            path: PathBuf::from("/a/c"),
+        };
+        let dir3 = Dir {
+            path: PathBuf::from("/a/b"),
+        };
+        multi_dir.insert(dir1.clone());
+        multi_dir.insert(dir2.clone());
+        multi_dir.insert(dir3.clone());
+        let expected: Vec<&Dir> = vec![&dir2, &dir3, &dir1];
+
+        assert_eq!(sort_files(multi_dir.par_iter()).get(2).unwrap(), &expected[2]);
+    }
+}
+
+#[cfg(test)]
+mod test_hash_file {
+    use super::*;
+
+    #[test]
+    fn invalid_file() {
+        assert_eq!(
+            hash_file(
+                &File {
+                    path: PathBuf::from("test"),
+                    size: 0,
+                },
+                "."
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn empty_file() {
+        const TEST_FILE1: &str = "test_hash_file_empty_file1.txt";
+        const TEST_FILE2: &str = "test_hash_file_empty_file2.txt";
+
+        fs::File::create(TEST_FILE1).unwrap();
+        fs::File::create(TEST_FILE2).unwrap();
+
+        assert_eq!(
+            hash_file(
+                &File {
+                    path: PathBuf::from(TEST_FILE1),
+                    size: 0,
+                },
+                "."
+            ),
+            hash_file(
+                &File {
+                    path: PathBuf::from(TEST_FILE2),
+                    size: 0,
+                },
+                "."
+            )
+        );
+
+        fs::remove_file(TEST_FILE1).unwrap();
+        fs::remove_file(TEST_FILE2).unwrap();
+    }
+
+    #[test]
+    fn equal_files() {
+        const TEST_DIR: &str = "test_hash_file_equal_files";
+        const TEST_FILE1: &str = "file1.txt";
+        const TEST_FILE2: &str = "file2.txt";
+
+        let path1 = [TEST_DIR, TEST_FILE1].join("/");
+        let path2 = [TEST_DIR, TEST_FILE2].join("/");
+
+        fs::create_dir_all(TEST_DIR).unwrap();
+        fs::File::create(&path1).unwrap();
+        fs::File::create(&path2).unwrap();
+        fs::write(path1, b"1234567890").unwrap();
+        fs::write(path2, b"1234567890").unwrap();
+
+        assert_eq!(
+            hash_file(
+                &File {
+                    path: PathBuf::from(TEST_FILE1),
+                    size: 10,
+                },
+                "."
+            ),
+            hash_file(
+                &File {
+                    path: PathBuf::from(TEST_FILE2),
+                    size: 10,
+                },
+                "."
+            )
+        );
+
+        fs::remove_dir_all(TEST_DIR).unwrap();
+    }
+
+    #[test]
+    fn different_files() {
+        assert_ne!(
+            hash_file(
+                &File {
+                    path: PathBuf::from("lumins/file_ops.rs"),
+                    size: 0,
+                },
+                "src"
+            ),
+            hash_file(
+                &File {
+                    path: PathBuf::from("main.rs"),
+                    size: 0,
+                },
+                "src"
+            )
+        );
+    }
 }
 
 #[cfg(test)]
