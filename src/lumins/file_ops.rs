@@ -78,12 +78,6 @@ pub struct FileSets {
 }
 
 impl FileSets {
-    pub fn new() -> Self {
-        FileSets {
-            files: HashSet::new(),
-            dirs: HashSet::new(),
-        }
-    }
     pub fn with(files: HashSet<File>, dirs: HashSet<Dir>) -> Self {
         FileSets { files, dirs }
     }
@@ -139,6 +133,14 @@ where
     file_to_copy.copy(&src_file, &dest_file);
 }
 
+/// Deletes all given files in parallel
+///
+/// There is no guarantee that this function will delete the files in the given order
+///
+/// # Arguments
+/// `files_to_delete`: files to delete
+/// * `location`: base directory of the files to delete, such that for all `file` in
+/// `files_to_delete`, `location + file.path()` is the absolute path of the file
 pub fn delete_files<'a, T, S>(files_to_delete: T, location: &str)
 where
     T: ParallelIterator<Item = &'a S>,
@@ -152,6 +154,14 @@ where
     });
 }
 
+/// Deletes all given files sequentially
+///
+/// This function ensures that the files are deleted in the exact order given
+///
+/// # Arguments
+/// * `files_to_delete`: files to delete, or sorted empty directories
+/// * `location`: base directory of the files to delete, such that for all `file` in
+/// `files_to_delete`, `location + file.path()` is the absolute path of the file
 pub fn delete_files_sequential<'a, T, S>(files_to_delete: T, location: &str)
 where
     T: IntoIterator<Item = &'a S>,
@@ -165,10 +175,10 @@ where
     }
 }
 
-/// Sorts (unstable) file paths in descending order by number of components
+/// Sorts (unstable) file paths in descending order by number of components, in parallel
 ///
 /// # Arguments
-/// * `files_to_sort`: files to sort
+/// `files_to_sort`: files to sort
 ///
 /// # Returns
 /// A vector of file paths in descending order by number of components
@@ -322,172 +332,6 @@ fn get_all_files_helper(src: &PathBuf, base: &str) -> Result<FileSets, io::Error
     }
 
     Ok(FileSets::with(files, dirs))
-}
-
-#[cfg(test)]
-mod test_sort_files {
-    use super::*;
-
-    #[test]
-    fn no_dir() {
-        let no_dir: HashSet<Dir> = HashSet::new();
-        assert_eq!(sort_files(no_dir.par_iter()), Vec::<&Dir>::new());
-    }
-
-    #[test]
-    fn single_dir() {
-        let mut single_dir: HashSet<Dir> = HashSet::new();
-        let dir = Dir {
-            path: PathBuf::from("/"),
-        };
-        single_dir.insert(dir.clone());
-        let expected: Vec<&Dir> = vec![&dir];
-
-        assert_eq!(sort_files(single_dir.par_iter()), expected);
-    }
-
-    #[test]
-    fn multi_dir_unique() {
-        let mut multi_dir: HashSet<Dir> = HashSet::new();
-        let dir1 = Dir {
-            path: PathBuf::from("/"),
-        };
-        let dir2 = Dir {
-            path: PathBuf::from("/a"),
-        };
-        let dir3 = Dir {
-            path: PathBuf::from("/a/b"),
-        };
-        multi_dir.insert(dir1.clone());
-        multi_dir.insert(dir2.clone());
-        multi_dir.insert(dir3.clone());
-        let expected: Vec<&Dir> = vec![&dir3, &dir2, &dir1];
-
-        assert_eq!(sort_files(multi_dir.par_iter()), expected);
-    }
-
-    #[test]
-    fn multi_dir() {
-        let mut multi_dir: HashSet<Dir> = HashSet::new();
-        let dir1 = Dir {
-            path: PathBuf::from("/"),
-        };
-        let dir2 = Dir {
-            path: PathBuf::from("/a/c"),
-        };
-        let dir3 = Dir {
-            path: PathBuf::from("/a/b"),
-        };
-        multi_dir.insert(dir1.clone());
-        multi_dir.insert(dir2.clone());
-        multi_dir.insert(dir3.clone());
-        let expected: Vec<&Dir> = vec![&dir2, &dir3, &dir1];
-
-        assert_eq!(sort_files(multi_dir.par_iter()).get(2).unwrap(), &expected[2]);
-    }
-}
-
-#[cfg(test)]
-mod test_hash_file {
-    use super::*;
-
-    #[test]
-    fn invalid_file() {
-        assert_eq!(
-            hash_file(
-                &File {
-                    path: PathBuf::from("test"),
-                    size: 0,
-                },
-                "."
-            ),
-            None
-        );
-    }
-
-    #[test]
-    fn empty_file() {
-        const TEST_FILE1: &str = "test_hash_file_empty_file1.txt";
-        const TEST_FILE2: &str = "test_hash_file_empty_file2.txt";
-
-        fs::File::create(TEST_FILE1).unwrap();
-        fs::File::create(TEST_FILE2).unwrap();
-
-        assert_eq!(
-            hash_file(
-                &File {
-                    path: PathBuf::from(TEST_FILE1),
-                    size: 0,
-                },
-                "."
-            ),
-            hash_file(
-                &File {
-                    path: PathBuf::from(TEST_FILE2),
-                    size: 0,
-                },
-                "."
-            )
-        );
-
-        fs::remove_file(TEST_FILE1).unwrap();
-        fs::remove_file(TEST_FILE2).unwrap();
-    }
-
-    #[test]
-    fn equal_files() {
-        const TEST_DIR: &str = "test_hash_file_equal_files";
-        const TEST_FILE1: &str = "file1.txt";
-        const TEST_FILE2: &str = "file2.txt";
-
-        let path1 = [TEST_DIR, TEST_FILE1].join("/");
-        let path2 = [TEST_DIR, TEST_FILE2].join("/");
-
-        fs::create_dir_all(TEST_DIR).unwrap();
-        fs::File::create(&path1).unwrap();
-        fs::File::create(&path2).unwrap();
-        fs::write(path1, b"1234567890").unwrap();
-        fs::write(path2, b"1234567890").unwrap();
-
-        assert_eq!(
-            hash_file(
-                &File {
-                    path: PathBuf::from(TEST_FILE1),
-                    size: 10,
-                },
-                "."
-            ),
-            hash_file(
-                &File {
-                    path: PathBuf::from(TEST_FILE2),
-                    size: 10,
-                },
-                "."
-            )
-        );
-
-        fs::remove_dir_all(TEST_DIR).unwrap();
-    }
-
-    #[test]
-    fn different_files() {
-        assert_ne!(
-            hash_file(
-                &File {
-                    path: PathBuf::from("lumins/file_ops.rs"),
-                    size: 0,
-                },
-                "src"
-            ),
-            hash_file(
-                &File {
-                    path: PathBuf::from("main.rs"),
-                    size: 0,
-                },
-                "src"
-            )
-        );
-    }
 }
 
 #[cfg(test)]
@@ -664,5 +508,341 @@ mod test_get_all_files {
             .output()
             .unwrap();
         fs::remove_dir_all(TEST_DIR).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod test_sort_files {
+    use super::*;
+
+    #[test]
+    fn no_dir() {
+        let no_dir: HashSet<Dir> = HashSet::new();
+        assert_eq!(sort_files(no_dir.par_iter()), Vec::<&Dir>::new());
+    }
+
+    #[test]
+    fn single_dir() {
+        let mut single_dir: HashSet<Dir> = HashSet::new();
+        let dir = Dir {
+            path: PathBuf::from("/"),
+        };
+        single_dir.insert(dir.clone());
+        let expected: Vec<&Dir> = vec![&dir];
+
+        assert_eq!(sort_files(single_dir.par_iter()), expected);
+    }
+
+    #[test]
+    fn multi_dir_unique() {
+        let mut multi_dir: HashSet<Dir> = HashSet::new();
+        let dir1 = Dir {
+            path: PathBuf::from("/"),
+        };
+        let dir2 = Dir {
+            path: PathBuf::from("/a"),
+        };
+        let dir3 = Dir {
+            path: PathBuf::from("/a/b"),
+        };
+        multi_dir.insert(dir1.clone());
+        multi_dir.insert(dir2.clone());
+        multi_dir.insert(dir3.clone());
+        let expected: Vec<&Dir> = vec![&dir3, &dir2, &dir1];
+
+        assert_eq!(sort_files(multi_dir.par_iter()), expected);
+    }
+
+    #[test]
+    fn multi_dir() {
+        let mut multi_dir: HashSet<Dir> = HashSet::new();
+        let dir1 = Dir {
+            path: PathBuf::from("/"),
+        };
+        let dir2 = Dir {
+            path: PathBuf::from("/a/c"),
+        };
+        let dir3 = Dir {
+            path: PathBuf::from("/a/b"),
+        };
+        multi_dir.insert(dir1.clone());
+        multi_dir.insert(dir2.clone());
+        multi_dir.insert(dir3.clone());
+        let expected: Vec<&Dir> = vec![&dir2, &dir3, &dir1];
+
+        assert_eq!(sort_files(multi_dir.par_iter()).get(2).unwrap(), &expected[2]);
+    }
+}
+
+#[cfg(test)]
+mod test_hash_file {
+    use super::*;
+
+    #[test]
+    fn invalid_file() {
+        assert_eq!(
+            hash_file(
+                &File {
+                    path: PathBuf::from("test"),
+                    size: 0,
+                },
+                "."
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn empty_file() {
+        const TEST_FILE1: &str = "test_hash_file_empty_file1.txt";
+        const TEST_FILE2: &str = "test_hash_file_empty_file2.txt";
+
+        fs::File::create(TEST_FILE1).unwrap();
+        fs::File::create(TEST_FILE2).unwrap();
+
+        assert_eq!(
+            hash_file(
+                &File {
+                    path: PathBuf::from(TEST_FILE1),
+                    size: 0,
+                },
+                "."
+            ),
+            hash_file(
+                &File {
+                    path: PathBuf::from(TEST_FILE2),
+                    size: 0,
+                },
+                "."
+            )
+        );
+
+        fs::remove_file(TEST_FILE1).unwrap();
+        fs::remove_file(TEST_FILE2).unwrap();
+    }
+
+    #[test]
+    fn equal_files() {
+        const TEST_DIR: &str = "test_hash_file_equal_files";
+        const TEST_FILE1: &str = "file1.txt";
+        const TEST_FILE2: &str = "file2.txt";
+
+        let path1 = [TEST_DIR, TEST_FILE1].join("/");
+        let path2 = [TEST_DIR, TEST_FILE2].join("/");
+
+        fs::create_dir_all(TEST_DIR).unwrap();
+        fs::File::create(&path1).unwrap();
+        fs::File::create(&path2).unwrap();
+        fs::write(path1, b"1234567890").unwrap();
+        fs::write(path2, b"1234567890").unwrap();
+
+        assert_eq!(
+            hash_file(
+                &File {
+                    path: PathBuf::from(TEST_FILE1),
+                    size: 10,
+                },
+                "."
+            ),
+            hash_file(
+                &File {
+                    path: PathBuf::from(TEST_FILE2),
+                    size: 10,
+                },
+                "."
+            )
+        );
+
+        fs::remove_dir_all(TEST_DIR).unwrap();
+    }
+
+    #[test]
+    fn different_files() {
+        assert_ne!(
+            hash_file(
+                &File {
+                    path: PathBuf::from("lumins/file_ops.rs"),
+                    size: 0,
+                },
+                "src"
+            ),
+            hash_file(
+                &File {
+                    path: PathBuf::from("main.rs"),
+                    size: 0,
+                },
+                "src"
+            )
+        );
+    }
+}
+
+#[cfg(test)]
+mod test_delete_files {
+    use super::*;
+
+    #[test]
+    fn delete_no_files() {
+        const TEST_DIR: &str = "test_delete_files_delete_no_files";
+        const TEST_FILES: [&str; 2] = ["file1.txt", "file2.txt"];
+
+        fs::create_dir_all(TEST_DIR).unwrap();
+
+        let files_to_delete: HashSet<File> = HashSet::new();
+        let files_to_delete_sequential: Vec<&File> = Vec::new();
+        let mut file_set = HashSet::new();
+
+        for i in 0..TEST_FILES.len() {
+            fs::File::create([TEST_DIR, TEST_FILES[i]].join("/")).unwrap();
+            let file = File {
+                path: PathBuf::from(TEST_FILES[i]),
+                size: 0,
+            };
+            file_set.insert(file);
+        }
+
+        delete_files(files_to_delete.par_iter(), TEST_DIR);
+        delete_files_sequential(files_to_delete_sequential.into_iter(), TEST_DIR);
+
+        assert_eq!(get_all_files(TEST_DIR).unwrap(), FileSets {
+            files: file_set,
+            dirs: HashSet::new(),
+        });
+
+        fs::remove_dir_all(TEST_DIR).unwrap();
+    }
+
+    #[test]
+    fn delete_invalid() {
+        const TEST_DIR: &str = "test_delete_files_delete_invalid";
+        const TEST_FILES: [&str; 2] = ["file1.txt", "file2.txt"];
+
+        fs::create_dir_all(TEST_DIR).unwrap();
+
+        let mut files_to_delete: HashSet<File> = HashSet::new();
+        let files_to_delete_sequential: Vec<&File> = Vec::new();
+        let mut file_set = HashSet::new();
+        let mut files = Vec::new();
+
+        for i in 0..TEST_FILES.len() {
+            fs::File::create([TEST_DIR, TEST_FILES[i]].join("/")).unwrap();
+            let file = File {
+                path: PathBuf::from([TEST_FILES[i], "a"].join("")),
+                size: 0,
+            };
+            let expected_file = File {
+                path: PathBuf::from(TEST_FILES[i]),
+                size: 0,
+            };
+            file_set.insert(expected_file);
+            files_to_delete.insert(file.clone());
+            files.push(file);
+        }
+
+        delete_files(files_to_delete.par_iter(), TEST_DIR);
+        delete_files_sequential(files_to_delete_sequential.into_iter(), TEST_DIR);
+
+        assert_eq!(get_all_files(TEST_DIR).unwrap(), FileSets {
+            files: file_set,
+            dirs: HashSet::new(),
+        });
+
+        fs::remove_dir_all(TEST_DIR).unwrap();
+    }
+
+    #[test]
+    fn delete_two_files_completely() {
+        const TEST_DIR: &str = "test_delete_files_delete_two_files_completely";
+        const TEST_DIR_SEQ: &str = "test_delete_files_delete_two_files_completely_seq";
+        const TEST_FILES: [&str; 2] = ["file1.txt", "file2.txt"];
+
+        fs::create_dir_all(TEST_DIR).unwrap();
+        fs::create_dir_all(TEST_DIR_SEQ).unwrap();
+
+        let mut files_to_delete: HashSet<File> = HashSet::new();
+        let mut files_to_delete_sequential: Vec<&File> = Vec::new();
+        let mut file_set = HashSet::new();
+        let mut files = Vec::new();
+
+        for i in 0..TEST_FILES.len() {
+            fs::File::create([TEST_DIR, TEST_FILES[i]].join("/")).unwrap();
+            fs::File::create([TEST_DIR_SEQ, TEST_FILES[i]].join("/")).unwrap();
+            let file = File {
+                path: PathBuf::from(TEST_FILES[i]),
+                size: 0,
+            };
+            file_set.insert(file.clone());
+            files_to_delete.insert(file.clone());
+            files.push(file);
+        }
+
+        for i in 0..TEST_FILES.len() {
+            files_to_delete_sequential.push(&files.get(i).unwrap());
+        }
+
+        delete_files(files_to_delete.par_iter(), TEST_DIR);
+        delete_files_sequential(files_to_delete_sequential.into_iter(), TEST_DIR_SEQ);
+
+        assert_eq!(get_all_files(TEST_DIR).unwrap(), FileSets {
+            files: HashSet::new(),
+            dirs: HashSet::new(),
+        });
+        assert_eq!(get_all_files(TEST_DIR_SEQ).unwrap(), FileSets {
+            files: HashSet::new(),
+            dirs: HashSet::new(),
+        });
+
+        fs::remove_dir_all(TEST_DIR).unwrap();
+        fs::remove_dir_all(TEST_DIR_SEQ).unwrap();
+    }
+
+    #[test]
+    fn delete_partial_dirs() {
+        const TEST_DIR: &str = "test_delete_files_delete_partial_dirs";
+        const TEST_DIR_SEQ: &str = "test_delete_files_delete_partial_dirs_seq";
+        const TEST_SUB_DIRS: [&str; 3] = ["dir0", "dir1", "dir2"];
+
+        fs::create_dir_all([TEST_DIR, TEST_SUB_DIRS[0], TEST_SUB_DIRS[1]].join("/")).unwrap();
+        fs::create_dir_all([TEST_DIR_SEQ, TEST_SUB_DIRS[0], TEST_SUB_DIRS[1]].join("/")).unwrap();
+        fs::create_dir_all([TEST_DIR, TEST_SUB_DIRS[2]].join("/")).unwrap();
+        fs::create_dir_all([TEST_DIR_SEQ, TEST_SUB_DIRS[2]].join("/")).unwrap();
+
+        let mut dirs_to_delete: HashSet<Dir> = HashSet::new();
+        let mut dirs_to_delete_sequential: Vec<&Dir> = Vec::new();
+        let mut file_set: HashSet<Dir> = HashSet::new();
+
+        let dir0 = Dir {
+            path: PathBuf::from(TEST_SUB_DIRS[0]),
+        };
+        let dir2 = Dir {
+            path: PathBuf::from(TEST_SUB_DIRS[2]),
+        };
+
+        dirs_to_delete.insert(dir0.clone());
+        dirs_to_delete.insert(dir2.clone());
+        dirs_to_delete_sequential.push(&dir0);
+        dirs_to_delete_sequential.push(&dir2);
+
+        delete_files(dirs_to_delete.par_iter(), TEST_DIR);
+        delete_files_sequential(dirs_to_delete_sequential.into_iter(), TEST_DIR_SEQ);
+
+        file_set.insert(Dir {
+            path: PathBuf::from(TEST_SUB_DIRS[0]),
+        });
+        file_set.insert(Dir {
+            path: PathBuf::from([TEST_SUB_DIRS[0], TEST_SUB_DIRS[1]].join("/")),
+        });
+
+        assert_eq!(get_all_files(TEST_DIR).unwrap(), FileSets {
+            files: HashSet::new(),
+            dirs: file_set.clone(),
+        });
+        assert_eq!(get_all_files(TEST_DIR_SEQ).unwrap(), FileSets {
+            files: HashSet::new(),
+            dirs: file_set,
+        });
+
+        fs::remove_dir_all(TEST_DIR).unwrap();
+        fs::remove_dir_all(TEST_DIR_SEQ).unwrap();
     }
 }
