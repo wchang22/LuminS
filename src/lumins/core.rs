@@ -22,7 +22,7 @@ pub fn synchronize(src: &str, dest: &str) -> Result<(), io::Error> {
 
     file_ops::delete_files(files_to_delete, &dest);
     file_ops::copy_files(files_to_copy, &src, &dest);
-    file_ops::compare_files(files_to_compare, &src, &dest);
+    file_ops::compare_and_copy_files(files_to_compare, &src, &dest);
 
     let dirs_to_delete: Vec<&file_ops::Dir> = file_ops::sort_files(dirs_to_delete);
 

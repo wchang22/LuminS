@@ -6,12 +6,17 @@ use blake2::{Blake2b, Digest};
 use rayon::prelude::*;
 use rayon_hash::HashSet;
 
+/// Interface for all file structs to perform common operations
+///
+/// Ensures that all files (file, dir, symlink) have
+/// a way of obtaining their path, copying, and deleting
 pub trait FileOps {
     fn path(&self) -> &PathBuf;
     fn remove(&self, path: &PathBuf);
     fn copy(&self, src: &PathBuf, dest: &PathBuf);
 }
 
+/// A struct that represents a single file
 #[derive(Hash, Eq, PartialEq, Debug, Clone)]
 pub struct File {
     path: PathBuf,
@@ -40,6 +45,7 @@ impl FileOps for File {
     }
 }
 
+/// A struct that represents a single directory
 #[derive(Hash, Eq, PartialEq, Debug, Clone)]
 pub struct Dir {
     path: PathBuf,
@@ -71,6 +77,7 @@ impl FileOps for Dir {
     }
 }
 
+/// A struct that represents sets of different types of files
 #[derive(Eq, PartialEq, Debug)]
 pub struct FileSets {
     files: HashSet<File>,
@@ -78,43 +85,61 @@ pub struct FileSets {
 }
 
 impl FileSets {
+    /// Initializes FileSets with the given sets
+    ///
+    /// # Arguments
+    /// * `files`: a set of files
+    /// * `dirs`: a set of dirs
+    ///
+    /// # Returns
+    /// A newly created FileSets struct
     pub fn with(files: HashSet<File>, dirs: HashSet<Dir>) -> Self {
         FileSets { files, dirs }
     }
+    /// Gets the set of files
+    ///
+    /// # Returns
+    /// The FileSets set of files
     pub fn files(&self) -> &HashSet<File> {
         &self.files
     }
+    /// Gets the set of dirs
+    ///
+    /// # Returns
+    /// The FileSets set of dirs
     pub fn dirs(&self) -> &HashSet<Dir> {
         &self.dirs
     }
 }
 
-pub fn compare_files<'a, T, S>(files_to_compare: T, src: &str, dest: &str)
+/// Compares all files in `files_to_compare` in `src` with all files in `files_to_compare` in `dest`
+/// and copies them over if they are different
+///
+/// # Arguments
+/// * `files_to_compare`: files to compare
+/// * `src`: base directory of the files to copy from, such that for all `file` in
+/// `files_to_compare`, `src + file.path()` is the absolute path of the source file
+/// * `dest`: base directory of the files to copy to, such that for all `file` in
+/// `files_to_compare`, `dest + file.path()` is the absolute path of the destination file
+pub fn compare_and_copy_files<'a, T, S>(files_to_compare: T, src: &str, dest: &str)
 where
     T: ParallelIterator<Item = &'a S>,
     S: FileOps + Sync + 'a,
 {
     files_to_compare.for_each(|file| {
-        if !compare_file(file, &src, &dest) {
+        let src_file_hash = hash_file(file, &src);
+        let dest_file_hash = hash_file(file, &dest);
+
+        if src_file_hash.is_none() || (src_file_hash != dest_file_hash) {
             copy_file(file, &src, &dest);
         }
     });
 }
 
-fn compare_file<S>(file_to_compare: &S, src: &str, dest: &str) -> bool
-where
-    S: FileOps,
-{
-    let src_file_hash = hash_file(file_to_compare, &src);
-    let dest_file_hash = hash_file(file_to_compare, &dest);
-
-    src_file_hash.is_some() && (src_file_hash == dest_file_hash)
-}
-
 /// Copies all given files from `src` to `dest` in parallel
 ///
 /// # Arguments
-/// `files_to_copy`: files to copy
+/// * `files_to_copy`: files to copy
 /// * `src`: base directory of the files to copy from, such that for all `file` in
 /// `files_to_copy`, `src + file.path()` is the absolute path of the source file
 /// * `dest`: base directory of the files to copy to, such that for all `file` in
@@ -132,7 +157,7 @@ where
 /// Copies a single file from `src` to `dest`
 ///
 /// # Arguments
-/// `files_to_copy`: file to copy
+/// * `files_to_copy`: file to copy
 /// * `src`: base directory of the files to copy from, such that `src + file_to_copy.path()`
 /// is the absolute path of the source file
 /// * `dest`: base directory of the files to copy to, such that `dest + file.path()`
@@ -1042,6 +1067,51 @@ mod test_copy_files {
         });
 
         fs::remove_dir_all(TEST_DIR).unwrap();
+        fs::remove_dir_all(TEST_DIR_OUT).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod test_compare_and_copy_files {
+    use super::*;
+
+    #[test]
+    fn single_same() {
+        const TEST_DIR: &str = "src";
+        const TEST_DIR_OUT: &str = "test_compare_and_copy_files_single_same_out";
+        fs::create_dir_all(TEST_DIR_OUT).unwrap();
+        fs::copy([TEST_DIR, "main.rs"].join("/"), [TEST_DIR_OUT, "main.rs"].join("/")).unwrap();
+
+        let mut files_to_compare = HashSet::new();
+        files_to_compare.insert(File {
+            path: PathBuf::from("main.rs"),
+            size: fs::metadata([TEST_DIR, "main.rs"].join("/")).unwrap().len(),
+        });
+        compare_and_copy_files(files_to_compare.par_iter(), TEST_DIR, TEST_DIR_OUT);
+        let actual = fs::read([TEST_DIR_OUT, "main.rs"].join("/")).unwrap();
+        let expected = fs::read([TEST_DIR, "main.rs"].join("/")).unwrap();
+        assert_eq!(expected, actual);
+
+        fs::remove_dir_all(TEST_DIR_OUT).unwrap();
+    }
+
+    #[test]
+    fn single_different() {
+        const TEST_DIR: &str = "src";
+        const TEST_DIR_OUT: &str = "test_compare_and_copy_files_single_different_out";
+        fs::create_dir_all(TEST_DIR_OUT).unwrap();
+        fs::File::create([TEST_DIR_OUT, "main.rs"].join("/")).unwrap();
+
+        let mut files_to_compare = HashSet::new();
+        files_to_compare.insert(File {
+            path: PathBuf::from("main.rs"),
+            size: fs::metadata([TEST_DIR, "main.rs"].join("/")).unwrap().len(),
+        });
+        compare_and_copy_files(files_to_compare.par_iter(), TEST_DIR, TEST_DIR_OUT);
+        let actual = fs::read([TEST_DIR_OUT, "main.rs"].join("/")).unwrap();
+        let expected = fs::read([TEST_DIR, "main.rs"].join("/")).unwrap();
+        assert_eq!(expected, actual);
+
         fs::remove_dir_all(TEST_DIR_OUT).unwrap();
     }
 }
