@@ -57,3 +57,108 @@ pub fn synchronize(src: &str, dest: &str) -> Result<(), io::Error> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod test_synchronize {
+    use super::*;
+    use std::fs;
+    use std::process::Command;
+
+    #[test]
+    fn invalid_src() {
+        assert_eq!(synchronize("/?", "src").is_err(), true);
+    }
+
+    #[test]
+    fn invalid_dest() {
+        assert_eq!(synchronize("src", "/?").is_err(), true);
+    }
+
+    #[cfg(target_family = "unix")]
+    #[test]
+    fn dir_1() {
+        const TEST_DIR: &str = "test_synchronize_dir1";
+        fs::create_dir_all(TEST_DIR).unwrap();
+
+        assert_eq!(synchronize("src", TEST_DIR).is_ok(), true);
+
+        let diff = Command::new("diff")
+            .args(&["-r", "src", TEST_DIR])
+            .output()
+            .unwrap();
+
+        assert_eq!(diff.status.success(), true);
+
+        fs::remove_dir_all(TEST_DIR).unwrap();
+    }
+
+    #[cfg(target_family = "unix")]
+    #[test]
+    fn dir_2() {
+        const TEST_DIR: &str = "test_synchronize_dir2";
+        fs::create_dir_all(TEST_DIR).unwrap();
+
+        assert_eq!(synchronize("target/debug", TEST_DIR).is_ok(), true);
+
+        let diff = Command::new("diff")
+            .args(&["-r", "target/debug", TEST_DIR])
+            .output()
+            .unwrap();
+
+        assert_eq!(diff.status.success(), true);
+
+        fs::File::create("target/debug/file.txt").unwrap();
+        fs::remove_dir_all("target/debug/build").unwrap();
+
+        let diff = Command::new("diff")
+            .args(&["-r", "target/debug", TEST_DIR])
+            .output()
+            .unwrap();
+
+        assert_eq!(diff.status.success(), false);
+
+        assert_eq!(synchronize("target/debug", TEST_DIR).is_ok(), true);
+
+        let diff = Command::new("diff")
+            .args(&["-r", "target/debug", TEST_DIR])
+            .output()
+            .unwrap();
+
+        assert_eq!(diff.status.success(), true);
+
+        fs::remove_dir_all(TEST_DIR).unwrap();
+    }
+
+    #[cfg(target_family = "unix")]
+    #[test]
+    fn change_symlink() {
+        use std::os::unix::fs::symlink;
+
+        const TEST_SRC: &str = "test_synchronize_change_symlink_src";
+        const TEST_DEST: &str = "test_synchronize_change_symlink_dest";
+        fs::create_dir_all(TEST_SRC).unwrap();
+        fs::create_dir_all(TEST_DEST).unwrap();
+
+        symlink("../Cargo.lock", [TEST_SRC, "file"].join("/")).unwrap();
+        symlink("../Cargo.toml", [TEST_DEST, "file"].join("/")).unwrap();
+
+        let diff = Command::new("diff")
+            .args(&["-r", TEST_SRC, TEST_DEST])
+            .output()
+            .unwrap();
+
+        assert_eq!(diff.status.success(), false);
+
+        assert_eq!(synchronize(TEST_SRC, TEST_DEST).is_ok(), true);
+
+        let diff = Command::new("diff")
+            .args(&["-r", TEST_SRC, TEST_DEST])
+            .output()
+            .unwrap();
+
+        assert_eq!(diff.status.success(), true);
+
+        fs::remove_dir_all(TEST_DEST).unwrap();
+        fs::remove_dir_all(TEST_SRC).unwrap();
+    }
+}

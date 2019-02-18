@@ -416,8 +416,12 @@ fn get_all_files_helper(src: &PathBuf, base: &str) -> Result<FileSets, io::Error
             });
         } else {
             // If not a file nor dir, must be a symlink
-            // This is safe to unwrap, since we know path is valid and is a symlink
-            let target = fs::read_link(&path).unwrap();
+            let target = fs::read_link(&path);
+            if target.is_err() {
+                eprintln!("Error - Reading symlink: {}", target.err().unwrap());
+                continue;
+            }
+            let target = target.unwrap();
             symlinks.insert(Symlink {
                 path: relative_path.to_path_buf(),
                 target,
