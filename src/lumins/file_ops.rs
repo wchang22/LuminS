@@ -77,11 +77,44 @@ impl FileOps for Dir {
     }
 }
 
+/// A struct that represents a single symbolic link
+#[derive(Hash, Eq, PartialEq, Debug, Clone)]
+pub struct Symlink {
+    path: PathBuf,
+    target: PathBuf,
+}
+
+impl FileOps for Symlink {
+    fn path(&self) -> &PathBuf {
+        &self.path
+    }
+    fn remove(&self, path: &PathBuf) {
+        let remove = fs::remove_file(&path);
+        if remove.is_err() {
+            eprintln!(
+                "Error -- Deleting Symlink {:?}: {}",
+                path,
+                remove.err().unwrap()
+            );
+        }
+    }
+    #[cfg(target_family = "unix")]
+    fn copy(&self, src: &PathBuf, dest: &PathBuf) {
+        use std::os::unix::fs::symlink;
+
+        let copy = symlink(&self.target, &dest);
+        if copy.is_err() {
+            eprintln!("Error -- Copying {:?} {}", src, copy.err().unwrap());
+        }
+    }
+}
+
 /// A struct that represents sets of different types of files
 #[derive(Eq, PartialEq, Debug)]
 pub struct FileSets {
     files: HashSet<File>,
     dirs: HashSet<Dir>,
+    symlinks: HashSet<Symlink>,
 }
 
 impl FileSets {
@@ -90,11 +123,16 @@ impl FileSets {
     /// # Arguments
     /// * `files`: a set of files
     /// * `dirs`: a set of dirs
+    /// * `symlinks`: a set of symlinks
     ///
     /// # Returns
     /// A newly created FileSets struct
-    pub fn with(files: HashSet<File>, dirs: HashSet<Dir>) -> Self {
-        FileSets { files, dirs }
+    pub fn with(files: HashSet<File>, dirs: HashSet<Dir>, symlinks: HashSet<Symlink>) -> Self {
+        FileSets {
+            files,
+            dirs,
+            symlinks,
+        }
     }
     /// Gets the set of files
     ///
@@ -109,6 +147,13 @@ impl FileSets {
     /// The FileSets set of dirs
     pub fn dirs(&self) -> &HashSet<Dir> {
         &self.dirs
+    }
+    /// Gets the set of symlinks
+    ///
+    /// # Returns
+    /// The FileSets set of symlinks
+    pub fn symlinks(&self) -> &HashSet<Symlink> {
+        &self.symlinks
     }
 }
 
@@ -128,9 +173,13 @@ where
 {
     files_to_compare.for_each(|file| {
         let src_file_hash = hash_file(file, &src);
-        let dest_file_hash = hash_file(file, &dest);
+        if src_file_hash.is_none() {
+            copy_file(file, &src, &dest);
+            return;
+        }
 
-        if src_file_hash.is_none() || (src_file_hash != dest_file_hash) {
+        let dest_file_hash = hash_file(file, &dest);
+        if src_file_hash != dest_file_hash {
             copy_file(file, &src, &dest);
         }
     });
@@ -315,6 +364,7 @@ fn get_all_files_helper(src: &PathBuf, base: &str) -> Result<FileSets, io::Error
 
     let mut files = HashSet::new();
     let mut dirs = HashSet::new();
+    let mut symlinks = HashSet::new();
 
     for file in dir {
         if file.is_err() {
@@ -335,11 +385,6 @@ fn get_all_files_helper(src: &PathBuf, base: &str) -> Result<FileSets, io::Error
         }
 
         let metadata = metadata.unwrap();
-
-        // Only copy files and dirs -- no symlinks
-        if !metadata.is_dir() && !metadata.is_file() {
-            continue;
-        }
 
         let path = file.path();
         // This is safe to unwrap, since `get_all_files` always calls this helper
@@ -363,16 +408,28 @@ fn get_all_files_helper(src: &PathBuf, base: &str) -> Result<FileSets, io::Error
             // Add subdirectory subdirectories and files to sets
             files.extend(file_sets.files);
             dirs.extend(file_sets.dirs);
-        } else {
-            // if file is a file
+            symlinks.extend(file_sets.symlinks);
+        } else if metadata.is_file() {
             files.insert(File {
                 path: relative_path.to_path_buf(),
                 size: metadata.len(),
             });
+        } else {
+            // If not a file nor dir, must be a symlink
+            let target = fs::read_link(&path);
+            if target.is_err() {
+                eprintln!("Error - Reading symlink: {}", target.err().unwrap());
+                continue;
+            }
+            let target = target.unwrap();
+            symlinks.insert(Symlink {
+                path: relative_path.to_path_buf(),
+                target,
+            });
         }
     }
 
-    Ok(FileSets::with(files, dirs))
+    Ok(FileSets::with(files, dirs, symlinks))
 }
 
 #[cfg(test)]
@@ -458,10 +515,22 @@ mod test_get_all_files {
         fs::create_dir_all(TEST_DIR).unwrap();
         symlink(TEST_FILE, TEST_LINK).unwrap();
 
+        let mut symlink_set = HashSet::new();
+        symlink_set.insert(Symlink {
+            path: PathBuf::from("file"),
+            target: PathBuf::from(TEST_FILE),
+        });
+
         let file_sets = get_all_files(TEST_DIR).unwrap();
 
-        assert_eq!(file_sets.files(), &HashSet::new());
-        assert_eq!(file_sets.dirs(), &HashSet::new());
+        assert_eq!(
+            file_sets,
+            FileSets {
+                files: HashSet::new(),
+                dirs: HashSet::new(),
+                symlinks: symlink_set,
+            }
+        );
 
         fs::remove_dir_all(TEST_DIR).unwrap();
     }
@@ -751,57 +820,20 @@ mod test_delete_files {
             FileSets {
                 files: file_set,
                 dirs: HashSet::new(),
+                symlinks: HashSet::new(),
             }
         );
 
         fs::remove_dir_all(TEST_DIR).unwrap();
     }
 
+    #[cfg(target_family = "unix")]
     #[test]
-    fn delete_invalid() {
-        const TEST_DIR: &str = "test_delete_files_delete_invalid";
-        const TEST_FILES: [&str; 2] = ["file1.txt", "file2.txt"];
+    fn delete_invalid_file_and_link() {
+        use std::os::unix::fs::symlink;
 
-        fs::create_dir_all(TEST_DIR).unwrap();
-
-        let mut files_to_delete: HashSet<File> = HashSet::new();
-        let files_to_delete_sequential: Vec<&File> = Vec::new();
-        let mut file_set = HashSet::new();
-        let mut files = Vec::new();
-
-        for i in 0..TEST_FILES.len() {
-            fs::File::create([TEST_DIR, TEST_FILES[i]].join("/")).unwrap();
-            let file = File {
-                path: PathBuf::from([TEST_FILES[i], "a"].join("")),
-                size: 0,
-            };
-            let expected_file = File {
-                path: PathBuf::from(TEST_FILES[i]),
-                size: 0,
-            };
-            file_set.insert(expected_file);
-            files_to_delete.insert(file.clone());
-            files.push(file);
-        }
-
-        delete_files(files_to_delete.par_iter(), TEST_DIR);
-        delete_files_sequential(files_to_delete_sequential.into_iter(), TEST_DIR);
-
-        assert_eq!(
-            get_all_files(TEST_DIR).unwrap(),
-            FileSets {
-                files: file_set,
-                dirs: HashSet::new(),
-            }
-        );
-
-        fs::remove_dir_all(TEST_DIR).unwrap();
-    }
-
-    #[test]
-    fn delete_two_files_completely() {
-        const TEST_DIR: &str = "test_delete_files_delete_two_files_completely";
-        const TEST_DIR_SEQ: &str = "test_delete_files_delete_two_files_completely_seq";
+        const TEST_DIR: &str = "test_delete_files_delete_invalid_file_and_link";
+        const TEST_DIR_SEQ: &str = "test_delete_files_delete_invalid_file_and_link_seq";
         const TEST_FILES: [&str; 2] = ["file1.txt", "file2.txt"];
 
         fs::create_dir_all(TEST_DIR).unwrap();
@@ -810,32 +842,116 @@ mod test_delete_files {
         let mut files_to_delete: HashSet<File> = HashSet::new();
         let mut files_to_delete_sequential: Vec<&File> = Vec::new();
         let mut file_set = HashSet::new();
-        let mut files = Vec::new();
 
-        for i in 0..TEST_FILES.len() {
-            fs::File::create([TEST_DIR, TEST_FILES[i]].join("/")).unwrap();
-            fs::File::create([TEST_DIR_SEQ, TEST_FILES[i]].join("/")).unwrap();
-            let file = File {
-                path: PathBuf::from(TEST_FILES[i]),
-                size: 0,
-            };
-            file_set.insert(file.clone());
-            files_to_delete.insert(file.clone());
-            files.push(file);
-        }
+        fs::File::create([TEST_DIR, TEST_FILES[0]].join("/")).unwrap();
+        fs::File::create([TEST_DIR_SEQ, TEST_FILES[0]].join("/")).unwrap();
+        let file = File {
+            path: PathBuf::from([TEST_FILES[0], "a"].join("/")),
+            size: 0,
+        };
+        let expected_file = File {
+            path: PathBuf::from(TEST_FILES[0]),
+            size: 0,
+        };
+        file_set.insert(expected_file);
+        files_to_delete.insert(file.clone());
+        files_to_delete_sequential.push(&file);
 
-        for i in 0..TEST_FILES.len() {
-            files_to_delete_sequential.push(&files.get(i).unwrap());
-        }
+        let mut links_to_delete: HashSet<Symlink> = HashSet::new();
+        let mut links_to_delete_sequential: Vec<&Symlink> = Vec::new();
+        let mut link_set = HashSet::new();
+
+        symlink(TEST_FILES[1], [TEST_DIR, "file"].join("/")).unwrap();
+        symlink(TEST_FILES[1], [TEST_DIR_SEQ, "file"].join("/")).unwrap();
+        let link = Symlink {
+            path: PathBuf::from("filea"),
+            target: PathBuf::from(TEST_FILES[1]),
+        };
+        let expected_link = Symlink {
+            path: PathBuf::from("file"),
+            target: PathBuf::from(TEST_FILES[1]),
+        };
+        link_set.insert(expected_link);
+        links_to_delete.insert(link.clone());
+        links_to_delete_sequential.push(&link);
 
         delete_files(files_to_delete.par_iter(), TEST_DIR);
         delete_files_sequential(files_to_delete_sequential.into_iter(), TEST_DIR_SEQ);
+        delete_files(links_to_delete.par_iter(), TEST_DIR);
+        delete_files_sequential(links_to_delete_sequential.into_iter(), TEST_DIR_SEQ);
+
+        assert_eq!(
+            get_all_files(TEST_DIR).unwrap(),
+            FileSets {
+                files: file_set.clone(),
+                dirs: HashSet::new(),
+                symlinks: link_set.clone(),
+            }
+        );
+        assert_eq!(
+            get_all_files(TEST_DIR_SEQ).unwrap(),
+            FileSets {
+                files: file_set,
+                dirs: HashSet::new(),
+                symlinks: link_set,
+            }
+        );
+
+        fs::remove_dir_all(TEST_DIR).unwrap();
+        fs::remove_dir_all(TEST_DIR_SEQ).unwrap();
+    }
+
+    #[cfg(target_family = "unix")]
+    #[test]
+    fn delete_file_and_link() {
+        use std::os::unix::fs::symlink;
+
+        const TEST_DIR: &str = "test_delete_files_delete_file_and_link";
+        const TEST_DIR_SEQ: &str = "test_delete_files_delete_file_and_link_seq";
+        const TEST_FILES: [&str; 2] = ["file1.txt", "file2.txt"];
+
+        fs::create_dir_all(TEST_DIR).unwrap();
+        fs::create_dir_all(TEST_DIR_SEQ).unwrap();
+
+        let mut files_to_delete: HashSet<File> = HashSet::new();
+        let mut files_to_delete_sequential: Vec<&File> = Vec::new();
+        let mut file_set = HashSet::new();
+
+        fs::File::create([TEST_DIR, TEST_FILES[0]].join("/")).unwrap();
+        fs::File::create([TEST_DIR_SEQ, TEST_FILES[0]].join("/")).unwrap();
+        let file = File {
+            path: PathBuf::from(TEST_FILES[0]),
+            size: 0,
+        };
+        file_set.insert(file.clone());
+        files_to_delete.insert(file.clone());
+        files_to_delete_sequential.push(&file);
+
+        let mut links_to_delete: HashSet<Symlink> = HashSet::new();
+        let mut links_to_delete_sequential: Vec<&Symlink> = Vec::new();
+        let mut link_set = HashSet::new();
+
+        symlink(TEST_FILES[1], [TEST_DIR, "file"].join("/")).unwrap();
+        symlink(TEST_FILES[1], [TEST_DIR_SEQ, "file"].join("/")).unwrap();
+        let link = Symlink {
+            path: PathBuf::from("file"),
+            target: PathBuf::from(TEST_FILES[1]),
+        };
+        link_set.insert(link.clone());
+        links_to_delete.insert(link.clone());
+        links_to_delete_sequential.push(&link);
+
+        delete_files(files_to_delete.par_iter(), TEST_DIR);
+        delete_files_sequential(files_to_delete_sequential.into_iter(), TEST_DIR_SEQ);
+        delete_files(links_to_delete.par_iter(), TEST_DIR);
+        delete_files_sequential(links_to_delete_sequential.into_iter(), TEST_DIR_SEQ);
 
         assert_eq!(
             get_all_files(TEST_DIR).unwrap(),
             FileSets {
                 files: HashSet::new(),
                 dirs: HashSet::new(),
+                symlinks: HashSet::new(),
             }
         );
         assert_eq!(
@@ -843,6 +959,7 @@ mod test_delete_files {
             FileSets {
                 files: HashSet::new(),
                 dirs: HashSet::new(),
+                symlinks: HashSet::new(),
             }
         );
 
@@ -892,6 +1009,7 @@ mod test_delete_files {
             FileSets {
                 files: HashSet::new(),
                 dirs: file_set.clone(),
+                symlinks: HashSet::new(),
             }
         );
         assert_eq!(
@@ -899,6 +1017,7 @@ mod test_delete_files {
             FileSets {
                 files: HashSet::new(),
                 dirs: file_set,
+                symlinks: HashSet::new(),
             }
         );
 
@@ -922,10 +1041,14 @@ mod test_copy_files {
 
         copy_files(HashSet::<File>::new().par_iter(), TEST_DIR, TEST_DIR_OUT);
 
-        assert_eq!(get_all_files(TEST_DIR_OUT).unwrap(), FileSets {
-            files: HashSet::new(),
-            dirs: HashSet::new(),
-        });
+        assert_eq!(
+            get_all_files(TEST_DIR_OUT).unwrap(),
+            FileSets {
+                files: HashSet::new(),
+                dirs: HashSet::new(),
+                symlinks: HashSet::new(),
+            }
+        );
 
         fs::remove_dir_all(TEST_DIR).unwrap();
         fs::remove_dir_all(TEST_DIR_OUT).unwrap();
@@ -934,14 +1057,25 @@ mod test_copy_files {
     #[test]
     fn regular_files_dirs() {
         const TEST_DIR: &str = "src";
-        const TEST_DIR_OUT: &str = "test_copy_regular_files_dirs_out";
+        const TEST_DIR_OUT: &str = "test_copy_files_regular_files_dirs_out";
 
         fs::create_dir_all(TEST_DIR_OUT).unwrap();
 
-        copy_files(get_all_files(TEST_DIR).unwrap().dirs().par_iter(), TEST_DIR, TEST_DIR_OUT);
-        copy_files(get_all_files(TEST_DIR).unwrap().files().par_iter(), TEST_DIR, TEST_DIR_OUT);
+        copy_files(
+            get_all_files(TEST_DIR).unwrap().dirs().par_iter(),
+            TEST_DIR,
+            TEST_DIR_OUT,
+        );
+        copy_files(
+            get_all_files(TEST_DIR).unwrap().files().par_iter(),
+            TEST_DIR,
+            TEST_DIR_OUT,
+        );
 
-        assert_eq!(get_all_files(TEST_DIR_OUT).unwrap(), get_all_files(TEST_DIR).unwrap());
+        assert_eq!(
+            get_all_files(TEST_DIR_OUT).unwrap(),
+            get_all_files(TEST_DIR).unwrap()
+        );
 
         fs::remove_dir_all(TEST_DIR_OUT).unwrap();
     }
@@ -950,7 +1084,7 @@ mod test_copy_files {
     #[cfg(target_family = "unix")]
     fn insufficient_output_permissions() {
         const TEST_DIR: &str = "src";
-        const TEST_DIR_OUT: &str = "test_copy_insufficient_output_permissions_out";
+        const TEST_DIR_OUT: &str = "test_copy_files_insufficient_output_permissions_out";
         const SUB_DIR: &str = "lumins";
 
         fs::create_dir_all([TEST_DIR_OUT, SUB_DIR].join("/")).unwrap();
@@ -966,8 +1100,16 @@ mod test_copy_files {
             .output()
             .unwrap();
 
-        copy_files(get_all_files(TEST_DIR).unwrap().dirs().par_iter(), TEST_DIR, TEST_DIR_OUT);
-        copy_files(get_all_files(TEST_DIR).unwrap().files().par_iter(), TEST_DIR, TEST_DIR_OUT);
+        copy_files(
+            get_all_files(TEST_DIR).unwrap().dirs().par_iter(),
+            TEST_DIR,
+            TEST_DIR_OUT,
+        );
+        copy_files(
+            get_all_files(TEST_DIR).unwrap().files().par_iter(),
+            TEST_DIR,
+            TEST_DIR_OUT,
+        );
 
         let mut files = HashSet::new();
         files.insert(File {
@@ -979,10 +1121,14 @@ mod test_copy_files {
             path: PathBuf::from("lumins"),
         });
 
-        assert_eq!(get_all_files(TEST_DIR_OUT).unwrap(), FileSets {
-            files,
-            dirs,
-        });
+        assert_eq!(
+            get_all_files(TEST_DIR_OUT).unwrap(),
+            FileSets {
+                files,
+                dirs,
+                symlinks: HashSet::new(),
+            }
+        );
 
         Command::new("rm")
             .arg("-rf")
@@ -994,8 +1140,8 @@ mod test_copy_files {
     #[test]
     #[cfg(target_family = "unix")]
     fn insufficient_input_permissions() {
-        const TEST_DIR: &str = "test_copy_insufficient_input_permissions";
-        const TEST_DIR_OUT: &str = "test_copy_insufficient_input_permissions_out";
+        const TEST_DIR: &str = "test_copy_files_insufficient_input_permissions";
+        const TEST_DIR_OUT: &str = "test_copy_files_insufficient_input_permissions_out";
 
         fs::create_dir_all(TEST_DIR).unwrap();
         fs::create_dir_all(TEST_DIR_OUT).unwrap();
@@ -1018,8 +1164,16 @@ mod test_copy_files {
             .output()
             .unwrap();
 
-        copy_files(get_all_files(TEST_DIR).unwrap().dirs().par_iter(), TEST_DIR, TEST_DIR_OUT);
-        copy_files(get_all_files(TEST_DIR).unwrap().files().par_iter(), TEST_DIR, TEST_DIR_OUT);
+        copy_files(
+            get_all_files(TEST_DIR).unwrap().dirs().par_iter(),
+            TEST_DIR,
+            TEST_DIR_OUT,
+        );
+        copy_files(
+            get_all_files(TEST_DIR).unwrap().files().par_iter(),
+            TEST_DIR,
+            TEST_DIR_OUT,
+        );
 
         let files = HashSet::new();
         let mut dirs = HashSet::new();
@@ -1027,10 +1181,14 @@ mod test_copy_files {
             path: PathBuf::from("lumins"),
         });
 
-        assert_eq!(get_all_files(TEST_DIR_OUT).unwrap(), FileSets {
-            files,
-            dirs,
-        });
+        assert_eq!(
+            get_all_files(TEST_DIR_OUT).unwrap(),
+            FileSets {
+                files,
+                dirs,
+                symlinks: HashSet::new(),
+            }
+        );
 
         Command::new("chmod")
             .arg("777")
@@ -1051,20 +1209,43 @@ mod test_copy_files {
     #[cfg(target_family = "unix")]
     fn copy_symlink() {
         use std::os::unix::fs::symlink;
-        const TEST_DIR: &str = "test_copy_symlink";
-        const TEST_DIR_OUT: &str = "test_copy_symlink_out";
+        const TEST_DIR: &str = "test_copy_files_copy_symlink";
+        const TEST_DIR_OUT: &str = "test_copy_files_copy_symlink_out";
 
         fs::create_dir_all(TEST_DIR).unwrap();
         fs::create_dir_all(TEST_DIR_OUT).unwrap();
         symlink("src/main.rs", [TEST_DIR, "file"].join("/")).unwrap();
 
-        copy_files(get_all_files(TEST_DIR).unwrap().dirs().par_iter(), TEST_DIR, TEST_DIR_OUT);
-        copy_files(get_all_files(TEST_DIR).unwrap().files().par_iter(), TEST_DIR, TEST_DIR_OUT);
+        copy_files(
+            get_all_files(TEST_DIR).unwrap().dirs().par_iter(),
+            TEST_DIR,
+            TEST_DIR_OUT,
+        );
+        copy_files(
+            get_all_files(TEST_DIR).unwrap().files().par_iter(),
+            TEST_DIR,
+            TEST_DIR_OUT,
+        );
+        copy_files(
+            get_all_files(TEST_DIR).unwrap().symlinks().par_iter(),
+            TEST_DIR,
+            TEST_DIR_OUT,
+        );
 
-        assert_eq!(get_all_files(TEST_DIR_OUT).unwrap(), FileSets {
-            files: HashSet::new(),
-            dirs: HashSet::new(),
+        let mut links_set = HashSet::new();
+        links_set.insert(Symlink {
+            path: PathBuf::from("file"),
+            target: PathBuf::from("src/main.rs"),
         });
+
+        assert_eq!(
+            get_all_files(TEST_DIR_OUT).unwrap(),
+            FileSets {
+                files: HashSet::new(),
+                dirs: HashSet::new(),
+                symlinks: links_set,
+            }
+        );
 
         fs::remove_dir_all(TEST_DIR).unwrap();
         fs::remove_dir_all(TEST_DIR_OUT).unwrap();
@@ -1080,7 +1261,11 @@ mod test_compare_and_copy_files {
         const TEST_DIR: &str = "src";
         const TEST_DIR_OUT: &str = "test_compare_and_copy_files_single_same_out";
         fs::create_dir_all(TEST_DIR_OUT).unwrap();
-        fs::copy([TEST_DIR, "main.rs"].join("/"), [TEST_DIR_OUT, "main.rs"].join("/")).unwrap();
+        fs::copy(
+            [TEST_DIR, "main.rs"].join("/"),
+            [TEST_DIR_OUT, "main.rs"].join("/"),
+        )
+        .unwrap();
 
         let mut files_to_compare = HashSet::new();
         files_to_compare.insert(File {
