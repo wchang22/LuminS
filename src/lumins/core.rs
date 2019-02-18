@@ -6,15 +6,23 @@ pub fn synchronize(src: &str, dest: &str) -> Result<(), io::Error> {
     let src_file_sets = file_ops::get_all_files(&src)?;
     let src_files = src_file_sets.files();
     let src_dirs = src_file_sets.dirs();
+    let src_symlinks = src_file_sets.symlinks();
 
     let dest_file_sets = file_ops::get_all_files(&dest)?;
     let dest_files = dest_file_sets.files();
     let dest_dirs = dest_file_sets.dirs();
+    let dest_symlinks = dest_file_sets.symlinks();
 
     let dirs_to_delete = dest_dirs.par_difference(&src_dirs);
     let dirs_to_copy = src_dirs.par_difference(&dest_dirs);
 
     file_ops::copy_files(dirs_to_copy, &src, &dest);
+
+    let symlinks_to_delete = dest_symlinks.par_difference(&src_symlinks);
+    let symlinks_to_copy = src_symlinks.par_difference(&dest_symlinks);
+
+    file_ops::delete_files(symlinks_to_delete, &dest);
+    file_ops::copy_files(symlinks_to_copy, &src, &dest);
 
     let files_to_delete = dest_files.par_difference(&src_files);
     let files_to_copy = src_files.par_difference(&dest_files);
