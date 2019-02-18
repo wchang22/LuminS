@@ -5,6 +5,7 @@ use std::{fs, io};
 use blake2::{Blake2b, Digest};
 use rayon::prelude::*;
 use rayon_hash::HashSet;
+use seahash::hash;
 
 /// Interface for all file structs to perform common operations
 ///
@@ -293,7 +294,7 @@ where
     files_to_sort
 }
 
-/// Generates a hash of the given file, using the BLAKE2b hash function
+/// Generates a hash of the given file, using the Seahash non-cryptographic hash function
 ///
 /// # Arguments
 /// * `file_to_hash`: file object to hash
@@ -303,7 +304,32 @@ where
 /// # Returns
 /// * Some: The hash of the given file
 /// * Err: If the given file cannot be hashed
-pub fn hash_file<S>(file_to_hash: &S, location: &str) -> Option<Vec<u8>>
+pub fn hash_file<S>(file_to_hash: &S, location: &str) -> Option<u64>
+where
+    S: FileOps,
+{
+    let mut file = PathBuf::from(&location);
+    file.push(&file_to_hash.path());
+
+    let contents = fs::read(file);
+    if contents.is_err() {
+        return None;
+    }
+
+    Some(hash(contents.unwrap().as_slice()))
+}
+
+/// Generates a hash of the given file, using the BLAKE2b cryptographic hash function
+///
+/// # Arguments
+/// * `file_to_hash`: file object to hash
+/// * `location`: base directory of the file to hash, such that
+/// `location + file_to_hash.path()` is the absolute path of the file
+///
+/// # Returns
+/// * Some: The hash of the given file
+/// * Err: If the given file cannot be hashed
+pub fn hash_file_secure<S>(file_to_hash: &S, location: &str) -> Option<Vec<u8>>
 where
     S: FileOps,
 {
@@ -727,6 +753,22 @@ mod test_hash_file {
                 "."
             )
         );
+        assert_eq!(
+            hash_file_secure(
+                &File {
+                    path: PathBuf::from(TEST_FILE1),
+                    size: 0,
+                },
+                "."
+            ),
+            hash_file_secure(
+                &File {
+                    path: PathBuf::from(TEST_FILE2),
+                    size: 0,
+                },
+                "."
+            )
+        );
 
         fs::remove_file(TEST_FILE1).unwrap();
         fs::remove_file(TEST_FILE2).unwrap();
@@ -763,6 +805,22 @@ mod test_hash_file {
                 "."
             )
         );
+        assert_eq!(
+            hash_file_secure(
+                &File {
+                    path: PathBuf::from(TEST_FILE1),
+                    size: 10,
+                },
+                "."
+            ),
+            hash_file_secure(
+                &File {
+                    path: PathBuf::from(TEST_FILE2),
+                    size: 10,
+                },
+                "."
+            )
+        );
 
         fs::remove_dir_all(TEST_DIR).unwrap();
     }
@@ -778,6 +836,22 @@ mod test_hash_file {
                 "src"
             ),
             hash_file(
+                &File {
+                    path: PathBuf::from("main.rs"),
+                    size: 0,
+                },
+                "src"
+            )
+        );
+        assert_ne!(
+            hash_file_secure(
+                &File {
+                    path: PathBuf::from("lumins/file_ops.rs"),
+                    size: 0,
+                },
+                "src"
+            ),
+            hash_file_secure(
                 &File {
                     path: PathBuf::from("main.rs"),
                     size: 0,
