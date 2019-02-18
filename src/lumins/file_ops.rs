@@ -5,7 +5,6 @@ use std::{fs, io};
 use blake2::{Blake2b, Digest};
 use rayon::prelude::*;
 use rayon_hash::HashSet;
-use std::fs::read_link;
 
 /// Interface for all file structs to perform common operations
 ///
@@ -174,9 +173,13 @@ where
 {
     files_to_compare.for_each(|file| {
         let src_file_hash = hash_file(file, &src);
-        let dest_file_hash = hash_file(file, &dest);
+        if src_file_hash.is_none() {
+            copy_file(file, &src, &dest);
+            return;
+        }
 
-        if src_file_hash.is_none() || (src_file_hash != dest_file_hash) {
+        let dest_file_hash = hash_file(file, &dest);
+        if src_file_hash != dest_file_hash {
             copy_file(file, &src, &dest);
         }
     });
@@ -414,7 +417,7 @@ fn get_all_files_helper(src: &PathBuf, base: &str) -> Result<FileSets, io::Error
         } else {
             // If not a file nor dir, must be a symlink
             // This is safe to unwrap, since we know path is valid and is a symlink
-            let target = read_link(&path).unwrap();
+            let target = fs::read_link(&path).unwrap();
             symlinks.insert(Symlink {
                 path: relative_path.to_path_buf(),
                 target,
