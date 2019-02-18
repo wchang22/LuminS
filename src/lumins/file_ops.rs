@@ -1163,6 +1163,7 @@ mod test_copy_files {
 
         fs::create_dir_all([TEST_DIR_OUT, SUB_DIR].join("/")).unwrap();
         fs::File::create([TEST_DIR_OUT, "main.rs"].join("/")).unwrap();
+        fs::File::create([TEST_DIR_OUT, "cli.yml"].join("/")).unwrap();
         Command::new("chmod")
             .arg("000")
             .arg([TEST_DIR_OUT, SUB_DIR].join("/"))
@@ -1171,6 +1172,11 @@ mod test_copy_files {
         Command::new("chmod")
             .arg("000")
             .arg([TEST_DIR_OUT, "main.rs"].join("/"))
+            .output()
+            .unwrap();
+        Command::new("chmod")
+            .arg("000")
+            .arg([TEST_DIR_OUT, "cli.yml"].join("/"))
             .output()
             .unwrap();
 
@@ -1188,6 +1194,10 @@ mod test_copy_files {
         let mut files = HashSet::new();
         files.insert(File {
             path: PathBuf::from("main.rs"),
+            size: 0,
+        });
+        files.insert(File {
+            path: PathBuf::from("cli.yml"),
             size: 0,
         });
         let mut dirs = HashSet::new();

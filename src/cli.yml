@@ -1,0 +1,35 @@
+name: LuminS
+version: "1.0"
+about: Luminous Synchronize - A fast and reliable alternative to rsync for synchronizing local files
+
+args:
+  - copy:
+      short: c
+      long: copy
+      help: Ignores synchronization checks and simply copies all files over
+  - nodelete:
+      short: n
+      long: nodelete
+      help: Do not delete any destination files
+  - secure:
+      short: s
+      long: secure
+      help: Use a cryptographic hash function for hashing similar files
+  - verbose:
+      short: v
+      long: verbose
+      help: Verbose outputs
+  - load:
+      short: l
+      long: load-config
+      help: Loads a config file containing synchronization settings
+      value_name: CONFIG
+      takes_value: true
+  - SOURCE:
+      help: Source directory
+      required: true
+      index: 1
+  - DESTINATION:
+      help: Destination directory
+      required: true
+      index: 2

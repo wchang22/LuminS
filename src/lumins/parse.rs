@@ -9,15 +9,7 @@ use std::fs;
 /// * `args` do not contain source and destination folders
 /// * The source folder is not a valid directory
 /// * The destination folder could not be created
-pub fn parse_args(args: &[String]) -> Result<(String, String), ()> {
-    if args.len() != 3 {
-        println!("Usage: lumins SOURCE... DESTINATION");
-        return Err(());
-    }
-
-    let src = &args[1];
-    let dest = &args[2];
-
+pub fn parse_args(src: &str, dest: &str) -> Result<(), ()> {
     // Check if src is valid
     let src_metadata = fs::metadata(&src);
     match src_metadata {
@@ -40,7 +32,7 @@ pub fn parse_args(args: &[String]) -> Result<(String, String), ()> {
         return Err(());
     }
 
-    Ok((src.to_string(), dest.to_string()))
+    Ok(())
 }
 
 #[cfg(test)]
@@ -49,56 +41,24 @@ mod test {
     use std::fs;
 
     #[test]
-    fn without_args() {
-        let args = vec![String::from("lumins")];
-        assert_eq!(parse_args(&args), Err(()));
-    }
-
-    #[test]
-    fn too_many_args() {
-        let args = vec![
-            String::from("lumins"),
-            String::from("src"),
-            String::from("dest"),
-            String::from("extra"),
-        ];
-        assert_eq!(parse_args(&args), Err(()));
-    }
-
-    #[test]
-    fn no_dest() {
-        let args = vec![String::from("lumins"), String::from("src")];
-        assert_eq!(parse_args(&args), Err(()));
-    }
-
-    #[test]
     fn invalid_src() {
-        let args = vec![
-            String::from("lumins"),
-            String::from("/?"),
-            String::from("dest"),
-        ];
-        assert_eq!(parse_args(&args), Err(()));
+        let src = "/?";
+        let dest = "/";
+        assert_eq!(parse_args(src, dest), Err(()));
     }
 
     #[test]
     fn src_not_dir() {
-        let args = vec![
-            String::from("lumins"),
-            String::from("./Cargo.toml"),
-            String::from("dest"),
-        ];
-        assert_eq!(parse_args(&args), Err(()));
+        let src = "./Cargo.toml";
+        let dest = "/";
+        assert_eq!(parse_args(src, dest), Err(()));
     }
 
     #[test]
     fn fail_create_dest() {
-        let args = vec![
-            String::from("lumins"),
-            String::from("."),
-            String::from("/asdf"),
-        ];
-        assert_eq!(parse_args(&args), Err(()));
+        let src = ".";
+        let dest = "/asdf";
+        assert_eq!(parse_args(src, dest), Err(()));
     }
 
     #[test]
@@ -106,14 +66,9 @@ mod test {
         const TEST_SRC: &str = "./src";
         const TEST_DIR: &str = "parse_success";
 
-        let args = vec![
-            String::from("lumins"),
-            String::from(TEST_SRC),
-            String::from(TEST_DIR),
-        ];
         assert_eq!(
-            parse_args(&args),
-            Ok((String::from(TEST_SRC), String::from(TEST_DIR)))
+            parse_args(TEST_SRC, TEST_DIR),
+            Ok(())
         );
 
         let test_dest = fs::read_dir(TEST_DIR);
