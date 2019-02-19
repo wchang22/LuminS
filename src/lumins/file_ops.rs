@@ -1388,7 +1388,13 @@ mod test_compare_and_copy_files {
             path: PathBuf::from("main.rs"),
             size: fs::metadata([TEST_DIR, "main.rs"].join("/")).unwrap().len(),
         });
-        compare_and_copy_files(files_to_compare.par_iter(), TEST_DIR, TEST_DIR_OUT);
+        compare_and_copy_files(files_to_compare.par_iter(), TEST_DIR, TEST_DIR_OUT, 0);
+        compare_and_copy_files(
+            files_to_compare.par_iter(),
+            TEST_DIR,
+            TEST_DIR_OUT,
+            parse::Flag::Secure as u32,
+        );
         let actual = fs::read([TEST_DIR_OUT, "main.rs"].join("/")).unwrap();
         let expected = fs::read([TEST_DIR, "main.rs"].join("/")).unwrap();
         assert_eq!(expected, actual);
@@ -1408,7 +1414,7 @@ mod test_compare_and_copy_files {
             path: PathBuf::from("main.rs"),
             size: fs::metadata([TEST_DIR, "main.rs"].join("/")).unwrap().len(),
         });
-        compare_and_copy_files(files_to_compare.par_iter(), TEST_DIR, TEST_DIR_OUT);
+        compare_and_copy_files(files_to_compare.par_iter(), TEST_DIR, TEST_DIR_OUT, 0);
         let actual = fs::read([TEST_DIR_OUT, "main.rs"].join("/")).unwrap();
         let expected = fs::read([TEST_DIR, "main.rs"].join("/")).unwrap();
         assert_eq!(expected, actual);

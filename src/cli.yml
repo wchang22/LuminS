@@ -19,12 +19,6 @@ args:
       short: v
       long: verbose
       help: Verbose outputs
-  - load:
-      short: l
-      long: load-config
-      help: Loads a config file containing synchronization settings
-      value_name: CONFIG
-      takes_value: true
   - SOURCE:
       help: Source directory
       required: true

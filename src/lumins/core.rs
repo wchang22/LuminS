@@ -96,12 +96,12 @@ mod test_synchronize {
 
     #[test]
     fn invalid_src() {
-        assert_eq!(synchronize("/?", "src").is_err(), true);
+        assert_eq!(synchronize("/?", "src", 0).is_err(), true);
     }
 
     #[test]
     fn invalid_dest() {
-        assert_eq!(synchronize("src", "/?").is_err(), true);
+        assert_eq!(synchronize("src", "/?", 0).is_err(), true);
     }
 
     #[cfg(target_family = "unix")]
@@ -110,7 +110,7 @@ mod test_synchronize {
         const TEST_DIR: &str = "test_synchronize_dir1";
         fs::create_dir_all(TEST_DIR).unwrap();
 
-        assert_eq!(synchronize("src", TEST_DIR).is_ok(), true);
+        assert_eq!(synchronize("src", TEST_DIR, 0).is_ok(), true);
 
         let diff = Command::new("diff")
             .args(&["-r", "src", TEST_DIR])
@@ -128,7 +128,7 @@ mod test_synchronize {
         const TEST_DIR: &str = "test_synchronize_dir2";
         fs::create_dir_all(TEST_DIR).unwrap();
 
-        assert_eq!(synchronize("target/debug", TEST_DIR).is_ok(), true);
+        assert_eq!(synchronize("target/debug", TEST_DIR, 0).is_ok(), true);
 
         let diff = Command::new("diff")
             .args(&["-r", "target/debug", TEST_DIR])
@@ -147,7 +147,7 @@ mod test_synchronize {
 
         assert_eq!(diff.status.success(), false);
 
-        assert_eq!(synchronize("target/debug", TEST_DIR).is_ok(), true);
+        assert_eq!(synchronize("target/debug", TEST_DIR, 0).is_ok(), true);
 
         let diff = Command::new("diff")
             .args(&["-r", "target/debug", TEST_DIR])
@@ -179,7 +179,7 @@ mod test_synchronize {
 
         assert_eq!(diff.status.success(), false);
 
-        assert_eq!(synchronize(TEST_SRC, TEST_DEST).is_ok(), true);
+        assert_eq!(synchronize(TEST_SRC, TEST_DEST, 0).is_ok(), true);
 
         let diff = Command::new("diff")
             .args(&["-r", TEST_SRC, TEST_DEST])
@@ -190,5 +190,79 @@ mod test_synchronize {
 
         fs::remove_dir_all(TEST_DEST).unwrap();
         fs::remove_dir_all(TEST_SRC).unwrap();
+    }
+
+    #[cfg(target_family = "unix")]
+    #[test]
+    fn flags() {
+        const TEST_DIR: &str = "test_synchronize_flags";
+        const TEST_DIR_OUT: &str = "test_synchronize_flags_out";
+        const TEST_DIR_EXPECTED: &str = "test_synchronize_flags_expected";
+        const TEST_FILES: [&str; 2] = ["file1.txt", "file2.txt"];
+
+        fs::create_dir_all(TEST_DIR).unwrap();
+        fs::create_dir_all(TEST_DIR_OUT).unwrap();
+        fs::create_dir_all(TEST_DIR_EXPECTED).unwrap();
+
+        fs::File::create([TEST_DIR, TEST_FILES[0]].join("/")).unwrap();
+        fs::File::create([TEST_DIR_EXPECTED, TEST_FILES[0]].join("/")).unwrap();
+        fs::File::create([TEST_DIR_EXPECTED, TEST_FILES[1]].join("/")).unwrap();
+
+        assert_eq!(synchronize(TEST_DIR, TEST_DIR_OUT, 0).is_ok(), true);
+
+        fs::File::create([TEST_DIR, TEST_FILES[1]].join("/")).unwrap();
+
+        let flags =
+            parse::Flag::Verbose as u32 | parse::Flag::NoDelete as u32 | parse::Flag::Secure as u32;
+
+        assert_eq!(synchronize(TEST_DIR, TEST_DIR_OUT, flags).is_ok(), true);
+
+        let diff = Command::new("diff")
+            .args(&["-r", TEST_DIR_OUT, TEST_DIR_EXPECTED])
+            .output()
+            .unwrap();
+
+        assert_eq!(diff.status.success(), true);
+
+        fs::remove_dir_all(TEST_DIR).unwrap();
+        fs::remove_dir_all(TEST_DIR_OUT).unwrap();
+        fs::remove_dir_all(TEST_DIR_EXPECTED).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod test_copy {
+    use super::*;
+    use std::fs;
+    use std::process::Command;
+
+    #[test]
+    fn invalid_src() {
+        assert_eq!(copy("/?", "src").is_err(), true);
+    }
+
+    #[test]
+    fn invalid_dest() {
+        const TEST_DIR: &str = "test_copy_invalid_dest";
+        assert_eq!(copy("src", TEST_DIR).is_ok(), true);
+        fs::remove_dir_all(TEST_DIR).unwrap();
+    }
+
+    #[cfg(target_family = "unix")]
+    #[test]
+    fn dir_1() {
+        const TEST_DIR: &str = "test_copy_dir1";
+        fs::create_dir_all(TEST_DIR).unwrap();
+
+        assert_eq!(copy("src", TEST_DIR).is_ok(), true);
+
+        let diff = Command::new("diff")
+            .args(&["-r", "src", TEST_DIR])
+            .output()
+            .unwrap();
+
+        assert_eq!(diff.status.success(), true);
+
+        fs::remove_dir_all(TEST_DIR).unwrap();
     }
 }
