@@ -1,19 +1,22 @@
+use rayon::prelude::*;
 use std::io;
 
 use crate::lumins::file_ops;
+use crate::lumins::parse;
 
 /// Synchronizes all files, directories, and symlinks in `dest` with `src`
 ///
 /// # Arguments
 /// * `src`: Source directory
 /// * `dest`: Destination directory
+/// * `flags`: bitfield for flags
 ///
 /// # Errors
 /// This function will return an error in the following situations,
 /// but is not limited to just these cases:
 /// * `src` is an invalid directory
 /// * `dest` is an invalid directory
-pub fn synchronize(src: &str, dest: &str) -> Result<(), io::Error> {
+pub fn synchronize(src: &str, dest: &str, flags: u32) -> Result<(), io::Error> {
     // Retrieve data from src directory about files, dirs, symlinks
     let src_file_sets = file_ops::get_all_files(&src)?;
     let src_files = src_file_sets.files();
@@ -26,34 +29,62 @@ pub fn synchronize(src: &str, dest: &str) -> Result<(), io::Error> {
     let dest_dirs = dest_file_sets.dirs();
     let dest_symlinks = dest_file_sets.symlinks();
 
-    // Figure out the differences between src and dest directories
-    let dirs_to_delete = dest_dirs.par_difference(&src_dirs);
-    let dirs_to_copy = src_dirs.par_difference(&dest_dirs);
+    // Determine whether or not to delete
+    let delete = !parse::contains_flag(flags, parse::Flag::NoDelete);
 
-    // Copy any new directories over
+    // Delete files and symlinks
+    if delete {
+        let symlinks_to_delete = dest_symlinks.par_difference(&src_symlinks);
+        let files_to_delete = dest_files.par_difference(&src_files);
+
+        file_ops::delete_files(symlinks_to_delete, &dest);
+        file_ops::delete_files(files_to_delete, &dest);
+    }
+
+    let dirs_to_copy = src_dirs.par_difference(&dest_dirs);
     file_ops::copy_files(dirs_to_copy, &src, &dest);
 
-    // Figure out the differences between src and dest symlinks
-    let symlinks_to_delete = dest_symlinks.par_difference(&src_symlinks);
     let symlinks_to_copy = src_symlinks.par_difference(&dest_symlinks);
-
-    // Copy new and delete old symlinks
-    file_ops::delete_files(symlinks_to_delete, &dest);
     file_ops::copy_files(symlinks_to_copy, &src, &dest);
 
-    // Figure out the differences between src and dest files
-    let files_to_delete = dest_files.par_difference(&src_files);
     let files_to_copy = src_files.par_difference(&dest_files);
     let files_to_compare = src_files.par_intersection(&dest_files);
 
-    // Copy new and delete old files
-    file_ops::delete_files(files_to_delete, &dest);
     file_ops::copy_files(files_to_copy, &src, &dest);
-    file_ops::compare_and_copy_files(files_to_compare, &src, &dest);
+    file_ops::compare_and_copy_files(files_to_compare, &src, &dest, flags);
 
-    // Delete the old directories in the correct order to prevent conflicts
-    let dirs_to_delete: Vec<&file_ops::Dir> = file_ops::sort_files(dirs_to_delete);
-    file_ops::delete_files_sequential(dirs_to_delete, &dest);
+    // Delete dirs in the correct order
+    if delete {
+        let dirs_to_delete = dest_dirs.par_difference(&src_dirs);
+        let dirs_to_delete: Vec<&file_ops::Dir> = file_ops::sort_files(dirs_to_delete);
+        file_ops::delete_files_sequential(dirs_to_delete, &dest);
+    }
+
+    Ok(())
+}
+
+/// Copies all files, directories, and symlinks in `src` to `dest`
+///
+/// # Arguments
+/// * `src`: Source directory
+/// * `dest`: Destination directory
+///
+/// # Errors
+/// This function will return an error in the following situations,
+/// but is not limited to just these cases:
+/// * `src` is an invalid directory
+/// * `dest` is an invalid directory
+pub fn copy(src: &str, dest: &str) -> Result<(), io::Error> {
+    // Retrieve data from src directory about files, dirs, symlinks
+    let src_file_sets = file_ops::get_all_files(&src)?;
+    let src_files = src_file_sets.files();
+    let src_dirs = src_file_sets.dirs();
+    let src_symlinks = src_file_sets.symlinks();
+
+    // Copy everything
+    file_ops::copy_files(src_dirs.into_par_iter(), &src, &dest);
+    file_ops::copy_files(src_files.into_par_iter(), &src, &dest);
+    file_ops::copy_files(src_symlinks.into_par_iter(), &src, &dest);
 
     Ok(())
 }
@@ -66,12 +97,12 @@ mod test_synchronize {
 
     #[test]
     fn invalid_src() {
-        assert_eq!(synchronize("/?", "src").is_err(), true);
+        assert_eq!(synchronize("/?", "src", 0).is_err(), true);
     }
 
     #[test]
     fn invalid_dest() {
-        assert_eq!(synchronize("src", "/?").is_err(), true);
+        assert_eq!(synchronize("src", "/?", 0).is_err(), true);
     }
 
     #[cfg(target_family = "unix")]
@@ -80,7 +111,7 @@ mod test_synchronize {
         const TEST_DIR: &str = "test_synchronize_dir1";
         fs::create_dir_all(TEST_DIR).unwrap();
 
-        assert_eq!(synchronize("src", TEST_DIR).is_ok(), true);
+        assert_eq!(synchronize("src", TEST_DIR, 0).is_ok(), true);
 
         let diff = Command::new("diff")
             .args(&["-r", "src", TEST_DIR])
@@ -98,7 +129,7 @@ mod test_synchronize {
         const TEST_DIR: &str = "test_synchronize_dir2";
         fs::create_dir_all(TEST_DIR).unwrap();
 
-        assert_eq!(synchronize("target/debug", TEST_DIR).is_ok(), true);
+        assert_eq!(synchronize("target/debug", TEST_DIR, 0).is_ok(), true);
 
         let diff = Command::new("diff")
             .args(&["-r", "target/debug", TEST_DIR])
@@ -117,7 +148,7 @@ mod test_synchronize {
 
         assert_eq!(diff.status.success(), false);
 
-        assert_eq!(synchronize("target/debug", TEST_DIR).is_ok(), true);
+        assert_eq!(synchronize("target/debug", TEST_DIR, 0).is_ok(), true);
 
         let diff = Command::new("diff")
             .args(&["-r", "target/debug", TEST_DIR])
@@ -149,7 +180,7 @@ mod test_synchronize {
 
         assert_eq!(diff.status.success(), false);
 
-        assert_eq!(synchronize(TEST_SRC, TEST_DEST).is_ok(), true);
+        assert_eq!(synchronize(TEST_SRC, TEST_DEST, 0).is_ok(), true);
 
         let diff = Command::new("diff")
             .args(&["-r", TEST_SRC, TEST_DEST])
@@ -160,5 +191,79 @@ mod test_synchronize {
 
         fs::remove_dir_all(TEST_DEST).unwrap();
         fs::remove_dir_all(TEST_SRC).unwrap();
+    }
+
+    #[cfg(target_family = "unix")]
+    #[test]
+    fn flags() {
+        const TEST_DIR: &str = "test_synchronize_flags";
+        const TEST_DIR_OUT: &str = "test_synchronize_flags_out";
+        const TEST_DIR_EXPECTED: &str = "test_synchronize_flags_expected";
+        const TEST_FILES: [&str; 2] = ["file1.txt", "file2.txt"];
+
+        fs::create_dir_all(TEST_DIR).unwrap();
+        fs::create_dir_all(TEST_DIR_OUT).unwrap();
+        fs::create_dir_all(TEST_DIR_EXPECTED).unwrap();
+
+        fs::File::create([TEST_DIR, TEST_FILES[0]].join("/")).unwrap();
+        fs::File::create([TEST_DIR_EXPECTED, TEST_FILES[0]].join("/")).unwrap();
+        fs::File::create([TEST_DIR_EXPECTED, TEST_FILES[1]].join("/")).unwrap();
+
+        assert_eq!(synchronize(TEST_DIR, TEST_DIR_OUT, 0).is_ok(), true);
+
+        fs::File::create([TEST_DIR, TEST_FILES[1]].join("/")).unwrap();
+
+        let flags =
+            parse::Flag::Verbose as u32 | parse::Flag::NoDelete as u32 | parse::Flag::Secure as u32;
+
+        assert_eq!(synchronize(TEST_DIR, TEST_DIR_OUT, flags).is_ok(), true);
+
+        let diff = Command::new("diff")
+            .args(&["-r", TEST_DIR_OUT, TEST_DIR_EXPECTED])
+            .output()
+            .unwrap();
+
+        assert_eq!(diff.status.success(), true);
+
+        fs::remove_dir_all(TEST_DIR).unwrap();
+        fs::remove_dir_all(TEST_DIR_OUT).unwrap();
+        fs::remove_dir_all(TEST_DIR_EXPECTED).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod test_copy {
+    use super::*;
+    use std::fs;
+    use std::process::Command;
+
+    #[test]
+    fn invalid_src() {
+        assert_eq!(copy("/?", "src").is_err(), true);
+    }
+
+    #[test]
+    fn invalid_dest() {
+        const TEST_DIR: &str = "test_copy_invalid_dest";
+        assert_eq!(copy("src", TEST_DIR).is_ok(), true);
+        fs::remove_dir_all(TEST_DIR).unwrap();
+    }
+
+    #[cfg(target_family = "unix")]
+    #[test]
+    fn dir_1() {
+        const TEST_DIR: &str = "test_copy_dir1";
+        fs::create_dir_all(TEST_DIR).unwrap();
+
+        assert_eq!(copy("src", TEST_DIR).is_ok(), true);
+
+        let diff = Command::new("diff")
+            .args(&["-r", "src", TEST_DIR])
+            .output()
+            .unwrap();
+
+        assert_eq!(diff.status.success(), true);
+
+        fs::remove_dir_all(TEST_DIR).unwrap();
     }
 }

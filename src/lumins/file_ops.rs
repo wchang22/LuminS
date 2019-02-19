@@ -7,6 +7,8 @@ use rayon::prelude::*;
 use rayon_hash::HashSet;
 use seahash::hash;
 
+use crate::lumins::parse;
+
 /// Interface for all file structs to perform common operations
 ///
 /// Ensures that all files (file, dir, symlink) have
@@ -36,12 +38,16 @@ impl FileOps for File {
                 path,
                 remove.err().unwrap()
             );
+        } else {
+            info!("Deleting {:?}", path);
         }
     }
     fn copy(&self, src: &PathBuf, dest: &PathBuf) {
         let copy = fs::copy(&src, &dest);
         if copy.is_err() {
             eprintln!("Error -- Copying {:?} {}", src, copy.err().unwrap());
+        } else {
+            info!("Copying {:?}", src);
         }
     }
 }
@@ -64,6 +70,8 @@ impl FileOps for Dir {
                 path,
                 remove.err().unwrap()
             );
+        } else {
+            info!("Deleting {:?}", path);
         }
     }
     fn copy(&self, _src: &PathBuf, dest: &PathBuf) {
@@ -74,6 +82,8 @@ impl FileOps for Dir {
                 dest,
                 create_dir.err().unwrap()
             );
+        } else {
+            info!("Creating {:?}", dest);
         }
     }
 }
@@ -97,6 +107,8 @@ impl FileOps for Symlink {
                 path,
                 remove.err().unwrap()
             );
+        } else {
+            info!("Deleting {:?}", path);
         }
     }
     #[cfg(target_family = "unix")]
@@ -106,6 +118,8 @@ impl FileOps for Symlink {
         let copy = symlink(&self.target, &dest);
         if copy.is_err() {
             eprintln!("Error -- Copying {:?} {}", src, copy.err().unwrap());
+        } else {
+            info!("Creating {:?}", dest);
         }
     }
 }
@@ -167,20 +181,39 @@ impl FileSets {
 /// `files_to_compare`, `src + file.path()` is the absolute path of the source file
 /// * `dest`: base directory of the files to copy to, such that for all `file` in
 /// `files_to_compare`, `dest + file.path()` is the absolute path of the destination file
-pub fn compare_and_copy_files<'a, T, S>(files_to_compare: T, src: &str, dest: &str)
+/// * `flags`: bitfield for flags
+pub fn compare_and_copy_files<'a, T, S>(files_to_compare: T, src: &str, dest: &str, flags: u32)
 where
     T: ParallelIterator<Item = &'a S>,
     S: FileOps + Sync + 'a,
 {
     files_to_compare.for_each(|file| {
-        let src_file_hash = hash_file(file, &src);
-        if src_file_hash.is_none() {
+        let secure = parse::contains_flag(flags, parse::Flag::Secure);
+
+        let mut src_file_hash_secure = None;
+        let mut src_file_hash = None;
+        if secure {
+            src_file_hash_secure = hash_file_secure(file, &src);
+        } else {
+            src_file_hash = hash_file(file, &src);
+        }
+
+        if (secure && src_file_hash_secure.is_none()) || (!secure && src_file_hash.is_none()) {
             copy_file(file, &src, &dest);
             return;
         }
 
-        let dest_file_hash = hash_file(file, &dest);
-        if src_file_hash != dest_file_hash {
+        let mut dest_file_hash_secure = None;
+        let mut dest_file_hash = None;
+        if secure {
+            dest_file_hash_secure = hash_file_secure(file, &dest);
+        } else {
+            dest_file_hash = hash_file(file, &dest);
+        }
+
+        if (secure && src_file_hash_secure != dest_file_hash_secure)
+            || (!secure && src_file_hash != dest_file_hash)
+        {
             copy_file(file, &src, &dest);
         }
     });
@@ -1163,6 +1196,7 @@ mod test_copy_files {
 
         fs::create_dir_all([TEST_DIR_OUT, SUB_DIR].join("/")).unwrap();
         fs::File::create([TEST_DIR_OUT, "main.rs"].join("/")).unwrap();
+        fs::File::create([TEST_DIR_OUT, "cli.yml"].join("/")).unwrap();
         Command::new("chmod")
             .arg("000")
             .arg([TEST_DIR_OUT, SUB_DIR].join("/"))
@@ -1171,6 +1205,11 @@ mod test_copy_files {
         Command::new("chmod")
             .arg("000")
             .arg([TEST_DIR_OUT, "main.rs"].join("/"))
+            .output()
+            .unwrap();
+        Command::new("chmod")
+            .arg("000")
+            .arg([TEST_DIR_OUT, "cli.yml"].join("/"))
             .output()
             .unwrap();
 
@@ -1188,6 +1227,10 @@ mod test_copy_files {
         let mut files = HashSet::new();
         files.insert(File {
             path: PathBuf::from("main.rs"),
+            size: 0,
+        });
+        files.insert(File {
+            path: PathBuf::from("cli.yml"),
             size: 0,
         });
         let mut dirs = HashSet::new();
@@ -1346,7 +1389,13 @@ mod test_compare_and_copy_files {
             path: PathBuf::from("main.rs"),
             size: fs::metadata([TEST_DIR, "main.rs"].join("/")).unwrap().len(),
         });
-        compare_and_copy_files(files_to_compare.par_iter(), TEST_DIR, TEST_DIR_OUT);
+        compare_and_copy_files(files_to_compare.par_iter(), TEST_DIR, TEST_DIR_OUT, 0);
+        compare_and_copy_files(
+            files_to_compare.par_iter(),
+            TEST_DIR,
+            TEST_DIR_OUT,
+            parse::Flag::Secure as u32,
+        );
         let actual = fs::read([TEST_DIR_OUT, "main.rs"].join("/")).unwrap();
         let expected = fs::read([TEST_DIR, "main.rs"].join("/")).unwrap();
         assert_eq!(expected, actual);
@@ -1366,7 +1415,7 @@ mod test_compare_and_copy_files {
             path: PathBuf::from("main.rs"),
             size: fs::metadata([TEST_DIR, "main.rs"].join("/")).unwrap().len(),
         });
-        compare_and_copy_files(files_to_compare.par_iter(), TEST_DIR, TEST_DIR_OUT);
+        compare_and_copy_files(files_to_compare.par_iter(), TEST_DIR, TEST_DIR_OUT, 0);
         let actual = fs::read([TEST_DIR_OUT, "main.rs"].join("/")).unwrap();
         let expected = fs::read([TEST_DIR, "main.rs"].join("/")).unwrap();
         assert_eq!(expected, actual);
