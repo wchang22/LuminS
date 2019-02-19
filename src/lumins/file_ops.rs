@@ -181,6 +181,7 @@ impl FileSets {
 /// `files_to_compare`, `src + file.path()` is the absolute path of the source file
 /// * `dest`: base directory of the files to copy to, such that for all `file` in
 /// `files_to_compare`, `dest + file.path()` is the absolute path of the destination file
+/// * `flags`: bitfield for flags
 pub fn compare_and_copy_files<'a, T, S>(files_to_compare: T, src: &str, dest: &str, flags: u32)
 where
     T: ParallelIterator<Item = &'a S>,

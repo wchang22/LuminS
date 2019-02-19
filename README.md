@@ -13,14 +13,28 @@
     <tr><td><b>100% Rust</b></td></tr>
     <tr><td><b>Powered by the <a href="https://github.com/rayon-rs/rayon">Rayon</a> library for high parallel perfomance</b></td></tr>
     <tr><td><b>Supported on Unix platforms</b></td></tr>
-    <tr><td><b>Faster than both rsync and cp when synchronizing on local systems</b></td></tr>
+    <tr><td><b>Extremely fast at synchronizing directories large quantities of files</b></td></tr>
     <tr><td><b>More to Come!</b></td></tr>
 </table>
+
 
 <h2>Usage</h2>
 
 ```bash
-$ lumins /src/folder /dest/folder
+USAGE:
+    lumins [FLAGS] <SOURCE> <DESTINATION>
+
+FLAGS:
+    -c, --copy        Ignores synchronization checks and simply copies all files over
+    -h, --help        Prints help information
+    -n, --nodelete    Do not delete any destination files
+    -s, --secure      Use a cryptographic hash function for hashing similar files
+    -V, --version     Prints version information
+    -v, --verbose     Verbose outputs
+
+ARGS:
+    <SOURCE>         Source directory
+    <DESTINATION>    Destination directory
 ```
 
 <h2>Build</h2>
@@ -32,4 +46,3 @@ $ git clone https://github.com/wchang22/LuminS.git
 $ cd LuminS
 $ cargo build --release
 ```
-

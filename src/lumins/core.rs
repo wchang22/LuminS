@@ -9,6 +9,7 @@ use crate::lumins::parse;
 /// # Arguments
 /// * `src`: Source directory
 /// * `dest`: Destination directory
+/// * `flags`: bitfield for flags
 ///
 /// # Errors
 /// This function will return an error in the following situations,

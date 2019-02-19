@@ -24,7 +24,6 @@ pub struct ParseResult<'a> {
 /// # Errors
 /// This function will return an error in the following situations,
 /// but is not limited to just these cases:
-/// * `args` do not contain source and destination folders
 /// * The source folder is not a valid directory
 /// * The destination folder could not be created
 pub fn parse_args<'a>(args: &'a ArgMatches) -> Result<ParseResult<'a>, ()> {
@@ -83,6 +82,38 @@ pub fn parse_args<'a>(args: &'a ArgMatches) -> Result<ParseResult<'a>, ()> {
 /// * false if `flag` is not set in `bitfield`
 pub fn contains_flag(bitfield: u32, flag: Flag) -> bool {
     (bitfield >> (((flag as u32) as f32).log2() as u32) & 1) == 1
+}
+
+#[cfg(test)]
+mod test_contains_flag {
+    use super::*;
+
+    #[test]
+    fn all_flags() {
+        let flags = 0xFFFFFFFF;
+        assert_eq!(contains_flag(flags, Flag::Copy), true);
+        assert_eq!(contains_flag(flags, Flag::NoDelete), true);
+        assert_eq!(contains_flag(flags, Flag::Secure), true);
+        assert_eq!(contains_flag(flags, Flag::Verbose), true);
+    }
+
+    #[test]
+    fn no_flags() {
+        let flags = 0;
+        assert_eq!(contains_flag(flags, Flag::Copy), false);
+        assert_eq!(contains_flag(flags, Flag::NoDelete), false);
+        assert_eq!(contains_flag(flags, Flag::Secure), false);
+        assert_eq!(contains_flag(flags, Flag::Verbose), false);
+    }
+
+    #[test]
+    fn some_flags() {
+        let flags = 0b1010;
+        assert_eq!(contains_flag(flags, Flag::Copy), false);
+        assert_eq!(contains_flag(flags, Flag::NoDelete), true);
+        assert_eq!(contains_flag(flags, Flag::Secure), false);
+        assert_eq!(contains_flag(flags, Flag::Verbose), true);
+    }
 }
 
 #[cfg(test)]
