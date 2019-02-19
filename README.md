@@ -13,7 +13,7 @@
     <tr><td><b>100% Rust</b></td></tr>
     <tr><td><b>Powered by the <a href="https://github.com/rayon-rs/rayon">Rayon</a> library for high parallel perfomance</b></td></tr>
     <tr><td><b>Supported on Unix platforms</b></td></tr>
-    <tr><td><b>Extremely fast at synchronizing directories large quantities of files</b></td></tr>
+    <tr><td><b>Extremely fast at synchronizing directories with large quantities of files</b></td></tr>
     <tr><td><b>More to Come!</b></td></tr>
 </table>
 
