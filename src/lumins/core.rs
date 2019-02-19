@@ -1,6 +1,8 @@
+use rayon::prelude::*;
 use std::io;
 
 use crate::lumins::file_ops;
+use crate::lumins::parse;
 
 /// Synchronizes all files, directories, and symlinks in `dest` with `src`
 ///
@@ -13,7 +15,7 @@ use crate::lumins::file_ops;
 /// but is not limited to just these cases:
 /// * `src` is an invalid directory
 /// * `dest` is an invalid directory
-pub fn synchronize(src: &str, dest: &str) -> Result<(), io::Error> {
+pub fn synchronize(src: &str, dest: &str, flags: u32) -> Result<(), io::Error> {
     // Retrieve data from src directory about files, dirs, symlinks
     let src_file_sets = file_ops::get_all_files(&src)?;
     let src_files = src_file_sets.files();
@@ -26,34 +28,62 @@ pub fn synchronize(src: &str, dest: &str) -> Result<(), io::Error> {
     let dest_dirs = dest_file_sets.dirs();
     let dest_symlinks = dest_file_sets.symlinks();
 
-    // Figure out the differences between src and dest directories
-    let dirs_to_delete = dest_dirs.par_difference(&src_dirs);
-    let dirs_to_copy = src_dirs.par_difference(&dest_dirs);
+    // Determine whether or not to delete
+    let delete = !parse::contains_flag(flags, parse::Flag::NoDelete);
 
-    // Copy any new directories over
+    // Delete files and symlinks
+    if delete {
+        let symlinks_to_delete = dest_symlinks.par_difference(&src_symlinks);
+        let files_to_delete = dest_files.par_difference(&src_files);
+
+        file_ops::delete_files(symlinks_to_delete, &dest);
+        file_ops::delete_files(files_to_delete, &dest);
+    }
+
+    let dirs_to_copy = src_dirs.par_difference(&dest_dirs);
     file_ops::copy_files(dirs_to_copy, &src, &dest);
 
-    // Figure out the differences between src and dest symlinks
-    let symlinks_to_delete = dest_symlinks.par_difference(&src_symlinks);
     let symlinks_to_copy = src_symlinks.par_difference(&dest_symlinks);
-
-    // Copy new and delete old symlinks
-    file_ops::delete_files(symlinks_to_delete, &dest);
     file_ops::copy_files(symlinks_to_copy, &src, &dest);
 
-    // Figure out the differences between src and dest files
-    let files_to_delete = dest_files.par_difference(&src_files);
     let files_to_copy = src_files.par_difference(&dest_files);
     let files_to_compare = src_files.par_intersection(&dest_files);
 
-    // Copy new and delete old files
-    file_ops::delete_files(files_to_delete, &dest);
     file_ops::copy_files(files_to_copy, &src, &dest);
-    file_ops::compare_and_copy_files(files_to_compare, &src, &dest);
+    file_ops::compare_and_copy_files(files_to_compare, &src, &dest, flags);
 
-    // Delete the old directories in the correct order to prevent conflicts
-    let dirs_to_delete: Vec<&file_ops::Dir> = file_ops::sort_files(dirs_to_delete);
-    file_ops::delete_files_sequential(dirs_to_delete, &dest);
+    // Delete dirs in the correct order
+    if delete {
+        let dirs_to_delete = dest_dirs.par_difference(&src_dirs);
+        let dirs_to_delete: Vec<&file_ops::Dir> = file_ops::sort_files(dirs_to_delete);
+        file_ops::delete_files_sequential(dirs_to_delete, &dest);
+    }
+
+    Ok(())
+}
+
+/// Copies all files, directories, and symlinks in `src` to `dest`
+///
+/// # Arguments
+/// * `src`: Source directory
+/// * `dest`: Destination directory
+///
+/// # Errors
+/// This function will return an error in the following situations,
+/// but is not limited to just these cases:
+/// * `src` is an invalid directory
+/// * `dest` is an invalid directory
+pub fn copy(src: &str, dest: &str) -> Result<(), io::Error> {
+    // Retrieve data from src directory about files, dirs, symlinks
+    let src_file_sets = file_ops::get_all_files(&src)?;
+    let src_files = src_file_sets.files();
+    let src_dirs = src_file_sets.dirs();
+    let src_symlinks = src_file_sets.symlinks();
+
+    // Copy everything
+    file_ops::copy_files(src_dirs.into_par_iter(), &src, &dest);
+    file_ops::copy_files(src_files.into_par_iter(), &src, &dest);
+    file_ops::copy_files(src_symlinks.into_par_iter(), &src, &dest);
 
     Ok(())
 }
