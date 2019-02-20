@@ -1,22 +1,23 @@
-use rayon::prelude::*;
 use std::io;
 
-use crate::lumins::file_ops;
-use crate::lumins::parse;
+use rayon::prelude::*;
+use rayon_hash::HashSet;
+
+use crate::lumins::{file_ops, parse::Flag};
 
 /// Synchronizes all files, directories, and symlinks in `dest` with `src`
 ///
 /// # Arguments
 /// * `src`: Source directory
 /// * `dest`: Destination directory
-/// * `flags`: bitfield for flags
+/// * `flags`: set for flags
 ///
 /// # Errors
 /// This function will return an error in the following situations,
 /// but is not limited to just these cases:
 /// * `src` is an invalid directory
 /// * `dest` is an invalid directory
-pub fn synchronize(src: &str, dest: &str, flags: u32) -> Result<(), io::Error> {
+pub fn synchronize(src: &str, dest: &str, flags: HashSet<Flag>) -> Result<(), io::Error> {
     // Retrieve data from src directory about files, dirs, symlinks
     let src_file_sets = file_ops::get_all_files(&src)?;
     let src_files = src_file_sets.files();
@@ -30,7 +31,7 @@ pub fn synchronize(src: &str, dest: &str, flags: u32) -> Result<(), io::Error> {
     let dest_symlinks = dest_file_sets.symlinks();
 
     // Determine whether or not to delete
-    let delete = !parse::contains_flag(flags, parse::Flag::NoDelete);
+    let delete = !flags.contains(&Flag::NoDelete);
 
     // Delete files and symlinks
     if delete {
@@ -41,15 +42,14 @@ pub fn synchronize(src: &str, dest: &str, flags: u32) -> Result<(), io::Error> {
         file_ops::delete_files(files_to_delete, &dest);
     }
 
+    // Copy files and symlinks
     let dirs_to_copy = src_dirs.par_difference(&dest_dirs);
-    file_ops::copy_files(dirs_to_copy, &src, &dest);
-
     let symlinks_to_copy = src_symlinks.par_difference(&dest_symlinks);
-    file_ops::copy_files(symlinks_to_copy, &src, &dest);
-
     let files_to_copy = src_files.par_difference(&dest_files);
     let files_to_compare = src_files.par_intersection(&dest_files);
 
+    file_ops::copy_files(dirs_to_copy, &src, &dest);
+    file_ops::copy_files(symlinks_to_copy, &src, &dest);
     file_ops::copy_files(files_to_copy, &src, &dest);
     file_ops::compare_and_copy_files(files_to_compare, &src, &dest, flags);
 
@@ -97,12 +97,12 @@ mod test_synchronize {
 
     #[test]
     fn invalid_src() {
-        assert_eq!(synchronize("/?", "src", 0).is_err(), true);
+        assert_eq!(synchronize("/?", "src", HashSet::new()).is_err(), true);
     }
 
     #[test]
     fn invalid_dest() {
-        assert_eq!(synchronize("src", "/?", 0).is_err(), true);
+        assert_eq!(synchronize("src", "/?", HashSet::new()).is_err(), true);
     }
 
     #[cfg(target_family = "unix")]
@@ -111,7 +111,7 @@ mod test_synchronize {
         const TEST_DIR: &str = "test_synchronize_dir1";
         fs::create_dir_all(TEST_DIR).unwrap();
 
-        assert_eq!(synchronize("src", TEST_DIR, 0).is_ok(), true);
+        assert_eq!(synchronize("src", TEST_DIR, HashSet::new()).is_ok(), true);
 
         let diff = Command::new("diff")
             .args(&["-r", "src", TEST_DIR])
@@ -129,7 +129,10 @@ mod test_synchronize {
         const TEST_DIR: &str = "test_synchronize_dir2";
         fs::create_dir_all(TEST_DIR).unwrap();
 
-        assert_eq!(synchronize("target/debug", TEST_DIR, 0).is_ok(), true);
+        assert_eq!(
+            synchronize("target/debug", TEST_DIR, HashSet::new()).is_ok(),
+            true
+        );
 
         let diff = Command::new("diff")
             .args(&["-r", "target/debug", TEST_DIR])
@@ -148,7 +151,10 @@ mod test_synchronize {
 
         assert_eq!(diff.status.success(), false);
 
-        assert_eq!(synchronize("target/debug", TEST_DIR, 0).is_ok(), true);
+        assert_eq!(
+            synchronize("target/debug", TEST_DIR, HashSet::new()).is_ok(),
+            true
+        );
 
         let diff = Command::new("diff")
             .args(&["-r", "target/debug", TEST_DIR])
@@ -180,7 +186,10 @@ mod test_synchronize {
 
         assert_eq!(diff.status.success(), false);
 
-        assert_eq!(synchronize(TEST_SRC, TEST_DEST, 0).is_ok(), true);
+        assert_eq!(
+            synchronize(TEST_SRC, TEST_DEST, HashSet::new()).is_ok(),
+            true
+        );
 
         let diff = Command::new("diff")
             .args(&["-r", TEST_SRC, TEST_DEST])
@@ -209,12 +218,17 @@ mod test_synchronize {
         fs::File::create([TEST_DIR_EXPECTED, TEST_FILES[0]].join("/")).unwrap();
         fs::File::create([TEST_DIR_EXPECTED, TEST_FILES[1]].join("/")).unwrap();
 
-        assert_eq!(synchronize(TEST_DIR, TEST_DIR_OUT, 0).is_ok(), true);
+        assert_eq!(
+            synchronize(TEST_DIR, TEST_DIR_OUT, HashSet::new()).is_ok(),
+            true
+        );
 
         fs::File::create([TEST_DIR, TEST_FILES[1]].join("/")).unwrap();
 
-        let flags =
-            parse::Flag::Verbose as u32 | parse::Flag::NoDelete as u32 | parse::Flag::Secure as u32;
+        let mut flags = HashSet::new();
+        flags.insert(Flag::Verbose);
+        flags.insert(Flag::NoDelete);
+        flags.insert(Flag::Secure);
 
         assert_eq!(synchronize(TEST_DIR, TEST_DIR_OUT, flags).is_ok(), true);
 

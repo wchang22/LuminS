@@ -3,11 +3,12 @@ use std::path::PathBuf;
 use std::{fs, io};
 
 use blake2::{Blake2b, Digest};
+use log::info;
 use rayon::prelude::*;
 use rayon_hash::HashSet;
-use seahash::hash;
+use seahash;
 
-use crate::lumins::parse;
+use crate::lumins::parse::Flag;
 
 /// Interface for all file structs to perform common operations
 ///
@@ -31,23 +32,15 @@ impl FileOps for File {
         &self.path
     }
     fn remove(&self, path: &PathBuf) {
-        let remove = fs::remove_file(&path);
-        if remove.is_err() {
-            eprintln!(
-                "Error -- Deleting File {:?}: {}",
-                path,
-                remove.err().unwrap()
-            );
-        } else {
-            info!("Deleting {:?}", path);
+        match fs::remove_file(&path) {
+            Ok(_) => info!("Deleting file {:?}", path),
+            Err(e) => eprintln!("Error -- Deleting file {:?}: {}", path, e),
         }
     }
     fn copy(&self, src: &PathBuf, dest: &PathBuf) {
-        let copy = fs::copy(&src, &dest);
-        if copy.is_err() {
-            eprintln!("Error -- Copying {:?} {}", src, copy.err().unwrap());
-        } else {
-            info!("Copying {:?}", src);
+        match fs::copy(&src, &dest) {
+            Ok(_) => info!("Copying file {:?}", src),
+            Err(e) => eprintln!("Error -- Copying file {:?}: {}", src, e),
         }
     }
 }
@@ -63,27 +56,15 @@ impl FileOps for Dir {
         &self.path
     }
     fn remove(&self, path: &PathBuf) {
-        let remove = fs::remove_dir(&path);
-        if remove.is_err() {
-            eprintln!(
-                "Error -- Deleting Dir {:?}: {}",
-                path,
-                remove.err().unwrap()
-            );
-        } else {
-            info!("Deleting {:?}", path);
+        match fs::remove_dir(&path) {
+            Ok(_) => info!("Deleting dir {:?}", path),
+            Err(e) => eprintln!("Error -- Deleting dir {:?}: {}", path, e),
         }
     }
     fn copy(&self, _src: &PathBuf, dest: &PathBuf) {
-        let create_dir = fs::create_dir_all(&dest);
-        if create_dir.is_err() {
-            eprintln!(
-                "Error -- Creating directory {:?} {}",
-                dest,
-                create_dir.err().unwrap()
-            );
-        } else {
-            info!("Creating {:?}", dest);
+        match fs::create_dir_all(&dest) {
+            Ok(_) => info!("Creating dir {:?}", dest),
+            Err(e) => eprintln!("Error -- Creating dir {:?}: {}", dest, e),
         }
     }
 }
@@ -100,26 +81,18 @@ impl FileOps for Symlink {
         &self.path
     }
     fn remove(&self, path: &PathBuf) {
-        let remove = fs::remove_file(&path);
-        if remove.is_err() {
-            eprintln!(
-                "Error -- Deleting Symlink {:?}: {}",
-                path,
-                remove.err().unwrap()
-            );
-        } else {
-            info!("Deleting {:?}", path);
+        match fs::remove_file(&path) {
+            Ok(_) => info!("Deleting symlink {:?}", path),
+            Err(e) => eprintln!("Error -- Deleting symlink {:?}: {}", path, e),
         }
     }
     #[cfg(target_family = "unix")]
-    fn copy(&self, src: &PathBuf, dest: &PathBuf) {
-        use std::os::unix::fs::symlink;
+    fn copy(&self, _src: &PathBuf, dest: &PathBuf) {
+        use std::os::unix::fs;
 
-        let copy = symlink(&self.target, &dest);
-        if copy.is_err() {
-            eprintln!("Error -- Copying {:?} {}", src, copy.err().unwrap());
-        } else {
-            info!("Creating {:?}", dest);
+        match fs::symlink(&self.target, &dest) {
+            Ok(_) => info!("Creating symlink {:?}", dest),
+            Err(e) => eprintln!("Error -- Creating symlink {:?}: {}", dest, e),
         }
     }
 }
@@ -181,40 +154,44 @@ impl FileSets {
 /// `files_to_compare`, `src + file.path()` is the absolute path of the source file
 /// * `dest`: base directory of the files to copy to, such that for all `file` in
 /// `files_to_compare`, `dest + file.path()` is the absolute path of the destination file
-/// * `flags`: bitfield for flags
-pub fn compare_and_copy_files<'a, T, S>(files_to_compare: T, src: &str, dest: &str, flags: u32)
-where
+/// * `flags`: set for flags
+pub fn compare_and_copy_files<'a, T, S>(
+    files_to_compare: T,
+    src: &str,
+    dest: &str,
+    flags: HashSet<Flag>,
+) where
     T: ParallelIterator<Item = &'a S>,
     S: FileOps + Sync + 'a,
 {
-    files_to_compare.for_each(|file| {
-        let secure = parse::contains_flag(flags, parse::Flag::Secure);
+    files_to_compare.for_each(|file| match flags.contains(&Flag::Secure) {
+        true => {
+            let src_file_hash_secure = hash_file_secure(file, &src);
 
-        let mut src_file_hash_secure = None;
-        let mut src_file_hash = None;
-        if secure {
-            src_file_hash_secure = hash_file_secure(file, &src);
-        } else {
-            src_file_hash = hash_file(file, &src);
+            if src_file_hash_secure.is_none() {
+                copy_file(file, &src, &dest);
+                return;
+            }
+
+            let dest_file_hash_secure = hash_file_secure(file, &dest);
+
+            if src_file_hash_secure != dest_file_hash_secure {
+                copy_file(file, &src, &dest);
+            }
         }
+        false => {
+            let src_file_hash = hash_file(file, &src);
 
-        if (secure && src_file_hash_secure.is_none()) || (!secure && src_file_hash.is_none()) {
-            copy_file(file, &src, &dest);
-            return;
-        }
+            if src_file_hash.is_none() {
+                copy_file(file, &src, &dest);
+                return;
+            }
 
-        let mut dest_file_hash_secure = None;
-        let mut dest_file_hash = None;
-        if secure {
-            dest_file_hash_secure = hash_file_secure(file, &dest);
-        } else {
-            dest_file_hash = hash_file(file, &dest);
-        }
+            let dest_file_hash = hash_file(file, &dest);
 
-        if (secure && src_file_hash_secure != dest_file_hash_secure)
-            || (!secure && src_file_hash != dest_file_hash)
-        {
-            copy_file(file, &src, &dest);
+            if src_file_hash != dest_file_hash {
+                copy_file(file, &src, &dest);
+            }
         }
     });
 }
@@ -249,10 +226,10 @@ fn copy_file<S>(file_to_copy: &S, src: &str, dest: &str)
 where
     S: FileOps,
 {
-    let mut src_file = PathBuf::from(&src);
-    src_file.push(&file_to_copy.path());
-    let mut dest_file = PathBuf::from(&dest);
-    dest_file.push(&file_to_copy.path());
+    let src_file = [&PathBuf::from(&src), file_to_copy.path()].iter().collect();
+    let dest_file = [&PathBuf::from(&dest), file_to_copy.path()]
+        .iter()
+        .collect();
 
     file_to_copy.copy(&src_file, &dest_file);
 }
@@ -271,9 +248,7 @@ where
     S: FileOps + Sync + 'a,
 {
     files_to_delete.for_each(|file| {
-        let mut path = PathBuf::from(&location);
-        path.push(file.path());
-
+        let path = [&PathBuf::from(&location), file.path()].iter().collect();
         file.remove(&path);
     });
 }
@@ -292,9 +267,7 @@ where
     S: FileOps + 'a,
 {
     for file in files_to_delete {
-        let mut path = PathBuf::from(&location);
-        path.push(file.path());
-
+        let path = [&PathBuf::from(&location), file.path()].iter().collect();
         file.remove(&path);
     }
 }
@@ -341,15 +314,14 @@ pub fn hash_file<S>(file_to_hash: &S, location: &str) -> Option<u64>
 where
     S: FileOps,
 {
-    let mut file = PathBuf::from(&location);
-    file.push(&file_to_hash.path());
+    let file: PathBuf = [&PathBuf::from(&location), file_to_hash.path()]
+        .iter()
+        .collect();
 
-    let contents = fs::read(file);
-    if contents.is_err() {
-        return None;
+    match fs::read(file) {
+        Ok(contents) => Some(seahash::hash(contents.as_slice())),
+        Err(_) => None,
     }
-
-    Some(hash(contents.unwrap().as_slice()))
 }
 
 /// Generates a hash of the given file, using the BLAKE2b cryptographic hash function
@@ -366,34 +338,27 @@ pub fn hash_file_secure<S>(file_to_hash: &S, location: &str) -> Option<Vec<u8>>
 where
     S: FileOps,
 {
-    let mut file = PathBuf::from(&location);
-    file.push(&file_to_hash.path());
+    let file: PathBuf = [&PathBuf::from(&location), file_to_hash.path()]
+        .iter()
+        .collect();
 
-    let file = fs::File::open(&file);
-    if file.is_err() {
-        eprintln!(
-            "Error -- Opening File: {:?}: {}",
-            file_to_hash.path(),
-            file.err().unwrap()
-        );
-        return None;
+    match &mut fs::File::open(&file) {
+        Ok(file) => {
+            let mut hasher = Blake2b::new();
+
+            match io::copy(file, &mut hasher) {
+                Ok(_) => Some(hasher.result().to_vec()),
+                Err(e) => {
+                    eprintln!("Error -- Hashing: {:?}: {}", file_to_hash.path(), e);
+                    None
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("Error -- Opening File: {:?}: {}", file_to_hash.path(), e);
+            None
+        }
     }
-
-    let mut file = file.unwrap();
-    let mut hasher = Blake2b::new();
-
-    let hash = io::copy(&mut file, &mut hasher);
-
-    if hash.is_err() {
-        eprintln!(
-            "Error -- Hashing: {:?}: {}",
-            file_to_hash.path(),
-            hash.err().unwrap()
-        );
-        return None;
-    }
-
-    Some(hasher.result().to_vec())
 }
 
 /// Recursively traverses a directory and all its subdirectories and returns
@@ -456,18 +421,18 @@ fn get_all_files_helper(src: &PathBuf, base: &str) -> Result<FileSets, io::Error
             });
 
             // Recursively call `get_all_files_helper` on the subdirectory
-            let file_sets = get_all_files_helper(&file.path(), base);
-
-            if file_sets.is_err() {
-                eprintln!("Error - Retrieving files: {}", file_sets.err().unwrap());
-                continue;
+            match get_all_files_helper(&file.path(), base) {
+                Ok(file_sets) => {
+                    // Add subdirectory subdirectories and files to sets
+                    files.extend(file_sets.files);
+                    dirs.extend(file_sets.dirs);
+                    symlinks.extend(file_sets.symlinks);
+                }
+                Err(e) => {
+                    eprintln!("Error - Retrieving files: {}", e);
+                    continue;
+                }
             }
-            let file_sets = file_sets.unwrap();
-
-            // Add subdirectory subdirectories and files to sets
-            files.extend(file_sets.files);
-            dirs.extend(file_sets.dirs);
-            symlinks.extend(file_sets.symlinks);
         } else if metadata.is_file() {
             files.insert(File {
                 path: relative_path.to_path_buf(),
@@ -475,16 +440,18 @@ fn get_all_files_helper(src: &PathBuf, base: &str) -> Result<FileSets, io::Error
             });
         } else {
             // If not a file nor dir, must be a symlink
-            let target = fs::read_link(&path);
-            if target.is_err() {
-                eprintln!("Error - Reading symlink: {}", target.err().unwrap());
-                continue;
+            match fs::read_link(&path) {
+                Ok(target) => {
+                    symlinks.insert(Symlink {
+                        path: relative_path.to_path_buf(),
+                        target,
+                    });
+                }
+                Err(e) => {
+                    eprintln!("Error - Reading symlink: {}", e);
+                    continue;
+                }
             }
-            let target = target.unwrap();
-            symlinks.insert(Symlink {
-                path: relative_path.to_path_buf(),
-                target,
-            });
         }
     }
 
@@ -1389,13 +1356,16 @@ mod test_compare_and_copy_files {
             path: PathBuf::from("main.rs"),
             size: fs::metadata([TEST_DIR, "main.rs"].join("/")).unwrap().len(),
         });
-        compare_and_copy_files(files_to_compare.par_iter(), TEST_DIR, TEST_DIR_OUT, 0);
+
+        let mut flags = HashSet::new();
+        flags.insert(Flag::Secure);
         compare_and_copy_files(
             files_to_compare.par_iter(),
             TEST_DIR,
             TEST_DIR_OUT,
-            parse::Flag::Secure as u32,
+            HashSet::new(),
         );
+        compare_and_copy_files(files_to_compare.par_iter(), TEST_DIR, TEST_DIR_OUT, flags);
         let actual = fs::read([TEST_DIR_OUT, "main.rs"].join("/")).unwrap();
         let expected = fs::read([TEST_DIR, "main.rs"].join("/")).unwrap();
         assert_eq!(expected, actual);
@@ -1415,7 +1385,12 @@ mod test_compare_and_copy_files {
             path: PathBuf::from("main.rs"),
             size: fs::metadata([TEST_DIR, "main.rs"].join("/")).unwrap().len(),
         });
-        compare_and_copy_files(files_to_compare.par_iter(), TEST_DIR, TEST_DIR_OUT, 0);
+        compare_and_copy_files(
+            files_to_compare.par_iter(),
+            TEST_DIR,
+            TEST_DIR_OUT,
+            HashSet::new(),
+        );
         let actual = fs::read([TEST_DIR_OUT, "main.rs"].join("/")).unwrap();
         let expected = fs::read([TEST_DIR, "main.rs"].join("/")).unwrap();
         assert_eq!(expected, actual);
