@@ -1247,7 +1247,7 @@ mod test_copy_files {
         const TEST_DIR: &str = "src";
         const TEST_DIR_OUT: [&str; 2] = [
             "test_copy_files_insufficient_output_permissions_out",
-            "test_copy_files_insufficient_output_permissions_out_seq"
+            "test_copy_files_insufficient_output_permissions_out_seq",
         ];
         const SUB_DIR: &str = "lumins";
 
@@ -1499,7 +1499,7 @@ mod test_compare_and_copy_files {
             [TEST_DIR, "main.rs"].join("/"),
             [TEST_DIR_OUT[1], "main.rs"].join("/"),
         )
-            .unwrap();
+        .unwrap();
 
         let file_to_compare = File {
             path: PathBuf::from("main.rs"),
@@ -1528,8 +1528,18 @@ mod test_compare_and_copy_files {
             HashSet::new(),
         );
 
-        compare_and_copy_files(files_to_compare.par_iter(), TEST_DIR, TEST_DIR_OUT[0], flags.clone());
-        compare_and_copy_files_sequential(files_to_compare_seq.into_iter(), TEST_DIR, TEST_DIR_OUT[1], flags);
+        compare_and_copy_files(
+            files_to_compare.par_iter(),
+            TEST_DIR,
+            TEST_DIR_OUT[0],
+            flags.clone(),
+        );
+        compare_and_copy_files_sequential(
+            files_to_compare_seq.into_iter(),
+            TEST_DIR,
+            TEST_DIR_OUT[1],
+            flags,
+        );
 
         let actual = fs::read([TEST_DIR_OUT[0], "main.rs"].join("/")).unwrap();
         let actual_seq = fs::read([TEST_DIR_OUT[1], "main.rs"].join("/")).unwrap();
