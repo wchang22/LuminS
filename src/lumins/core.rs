@@ -42,16 +42,31 @@ pub fn synchronize(src: &str, dest: &str, flags: HashSet<Flag>) -> Result<(), io
         file_ops::delete_files(files_to_delete, &dest);
     }
 
-    // Copy files and symlinks
-    let dirs_to_copy = src_dirs.par_difference(&dest_dirs);
-    let symlinks_to_copy = src_symlinks.par_difference(&dest_symlinks);
-    let files_to_copy = src_files.par_difference(&dest_files);
-    let files_to_compare = src_files.par_intersection(&dest_files);
+    // Determine whether or not to run sequentially
+    match flags.contains(&Flag::Sequential) {
+        true => {
+            let dirs_to_copy = src_dirs.difference(&dest_dirs);
+            let symlinks_to_copy = src_symlinks.difference(&dest_symlinks);
+            let files_to_copy = src_files.difference(&dest_files);
+            let files_to_compare = src_files.intersection(&dest_files);
 
-    file_ops::copy_files(dirs_to_copy, &src, &dest);
-    file_ops::copy_files(symlinks_to_copy, &src, &dest);
-    file_ops::copy_files(files_to_copy, &src, &dest);
-    file_ops::compare_and_copy_files(files_to_compare, &src, &dest, flags);
+            file_ops::copy_files_sequential(dirs_to_copy, &src, &dest);
+            file_ops::copy_files_sequential(symlinks_to_copy, &src, &dest);
+            file_ops::copy_files_sequential(files_to_copy, &src, &dest);
+            file_ops::compare_and_copy_files_sequential(files_to_compare, &src, &dest, flags);
+        }
+        false => {
+            let dirs_to_copy = src_dirs.par_difference(&dest_dirs);
+            let symlinks_to_copy = src_symlinks.par_difference(&dest_symlinks);
+            let files_to_copy = src_files.par_difference(&dest_files);
+            let files_to_compare = src_files.par_intersection(&dest_files);
+
+            file_ops::copy_files(dirs_to_copy, &src, &dest);
+            file_ops::copy_files(symlinks_to_copy, &src, &dest);
+            file_ops::copy_files(files_to_copy, &src, &dest);
+            file_ops::compare_and_copy_files(files_to_compare, &src, &dest, flags);
+        }
+    }
 
     // Delete dirs in the correct order
     if delete {
@@ -74,7 +89,7 @@ pub fn synchronize(src: &str, dest: &str, flags: HashSet<Flag>) -> Result<(), io
 /// but is not limited to just these cases:
 /// * `src` is an invalid directory
 /// * `dest` is an invalid directory
-pub fn copy(src: &str, dest: &str) -> Result<(), io::Error> {
+pub fn copy(src: &str, dest: &str, flags: HashSet<Flag>) -> Result<(), io::Error> {
     // Retrieve data from src directory about files, dirs, symlinks
     let src_file_sets = file_ops::get_all_files(&src)?;
     let src_files = src_file_sets.files();
@@ -82,9 +97,15 @@ pub fn copy(src: &str, dest: &str) -> Result<(), io::Error> {
     let src_symlinks = src_file_sets.symlinks();
 
     // Copy everything
-    file_ops::copy_files(src_dirs.into_par_iter(), &src, &dest);
-    file_ops::copy_files(src_files.into_par_iter(), &src, &dest);
-    file_ops::copy_files(src_symlinks.into_par_iter(), &src, &dest);
+    if flags.contains(&Flag::Sequential) {
+        file_ops::copy_files_sequential(src_dirs.into_iter(), &src, &dest);
+        file_ops::copy_files_sequential(src_files.into_iter(), &src, &dest);
+        file_ops::copy_files_sequential(src_symlinks.into_iter(), &src, &dest);
+    } else {
+        file_ops::copy_files(src_dirs.into_par_iter(), &src, &dest);
+        file_ops::copy_files(src_files.into_par_iter(), &src, &dest);
+        file_ops::copy_files(src_symlinks.into_par_iter(), &src, &dest);
+    }
 
     Ok(())
 }
@@ -229,6 +250,7 @@ mod test_synchronize {
         flags.insert(Flag::Verbose);
         flags.insert(Flag::NoDelete);
         flags.insert(Flag::Secure);
+        flags.insert(Flag::Sequential);
 
         assert_eq!(synchronize(TEST_DIR, TEST_DIR_OUT, flags).is_ok(), true);
 
@@ -253,13 +275,13 @@ mod test_copy {
 
     #[test]
     fn invalid_src() {
-        assert_eq!(copy("/?", "src").is_err(), true);
+        assert_eq!(copy("/?", "src", HashSet::new()).is_err(), true);
     }
 
     #[test]
     fn invalid_dest() {
         const TEST_DIR: &str = "test_copy_invalid_dest";
-        assert_eq!(copy("src", TEST_DIR).is_ok(), true);
+        assert_eq!(copy("src", TEST_DIR, HashSet::new()).is_ok(), true);
         fs::remove_dir_all(TEST_DIR).unwrap();
     }
 
@@ -269,7 +291,28 @@ mod test_copy {
         const TEST_DIR: &str = "test_copy_dir1";
         fs::create_dir_all(TEST_DIR).unwrap();
 
-        assert_eq!(copy("src", TEST_DIR).is_ok(), true);
+        assert_eq!(copy("src", TEST_DIR, HashSet::new()).is_ok(), true);
+
+        let diff = Command::new("diff")
+            .args(&["-r", "src", TEST_DIR])
+            .output()
+            .unwrap();
+
+        assert_eq!(diff.status.success(), true);
+
+        fs::remove_dir_all(TEST_DIR).unwrap();
+    }
+
+    #[cfg(target_family = "unix")]
+    #[test]
+    fn flags() {
+        const TEST_DIR: &str = "test_copy_flags";
+        fs::create_dir_all(TEST_DIR).unwrap();
+
+        let mut flags = HashSet::new();
+        flags.insert(Flag::Sequential);
+
+        assert_eq!(copy("src", TEST_DIR, flags).is_ok(), true);
 
         let diff = Command::new("diff")
             .args(&["-r", "src", TEST_DIR])

@@ -27,7 +27,7 @@ fn main() {
     }
 
     let result = if flags.contains(&Flag::Copy) {
-        core::copy(src, dest)
+        core::copy(src, dest, flags)
     } else {
         core::synchronize(src, dest, flags)
     };
@@ -141,6 +141,60 @@ mod test_main {
 
         Command::new("target/release/lumins")
             .args(&["-s", TEST_SOURCE, TEST_DEST])
+            .output()
+            .unwrap();
+
+        let diff = Command::new("diff")
+            .args(&["-r", TEST_SOURCE, TEST_DEST])
+            .output()
+            .unwrap();
+
+        assert_eq!(diff.status.success(), true);
+
+        fs::remove_dir_all(TEST_DEST).unwrap();
+    }
+
+    #[cfg(target_family = "unix")]
+    #[test]
+    fn test_sequential() {
+        Command::new("cargo")
+            .args(&["build", "--release"])
+            .output()
+            .unwrap();
+
+        const TEST_SOURCE: &str = "target/debug";
+        const TEST_DEST: &str = "test_main_test_sequential";
+        fs::create_dir_all(TEST_DEST).unwrap();
+
+        Command::new("target/release/lumins")
+            .args(&["-S", TEST_SOURCE, TEST_DEST])
+            .output()
+            .unwrap();
+
+        let diff = Command::new("diff")
+            .args(&["-r", TEST_SOURCE, TEST_DEST])
+            .output()
+            .unwrap();
+
+        assert_eq!(diff.status.success(), true);
+
+        fs::remove_dir_all(TEST_DEST).unwrap();
+    }
+
+    #[cfg(target_family = "unix")]
+    #[test]
+    fn test_sequential_copy() {
+        Command::new("cargo")
+            .args(&["build", "--release"])
+            .output()
+            .unwrap();
+
+        const TEST_SOURCE: &str = "target/debug";
+        const TEST_DEST: &str = "test_main_test_sequential_copy";
+        fs::create_dir_all(TEST_DEST).unwrap();
+
+        Command::new("target/release/lumins")
+            .args(&["-Sc", TEST_SOURCE, TEST_DEST])
             .output()
             .unwrap();
 

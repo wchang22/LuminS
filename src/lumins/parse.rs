@@ -4,13 +4,14 @@ use clap::ArgMatches;
 use rayon_hash::HashSet;
 
 /// Enum to represent command line flags
-#[derive(Hash, Eq, PartialEq)]
+#[derive(Hash, Eq, PartialEq, Clone)]
 #[repr(u8)]
 pub enum Flag {
     Copy,
     NoDelete,
     Secure,
     Verbose,
+    Sequential,
 }
 
 /// Struct to represent the result of parsing args
@@ -67,46 +68,9 @@ pub fn parse_args<'a>(args: &'a ArgMatches) -> Result<ParseResult<'a>, ()> {
     if args.is_present("secure") {
         flags.insert(Flag::Secure);
     }
+    if args.is_present("sequential") {
+        flags.insert(Flag::Sequential);
+    }
 
     Ok(ParseResult { src, dest, flags })
-}
-
-#[cfg(test)]
-mod test {
-    //    use super::*;
-    //    use std::fs;
-    //
-    //    #[test]
-    //    fn invalid_src() {
-    //        let src = "/?";
-    //        let dest = "/";
-    //        assert_eq!(parse_args(src, dest), Err(()));
-    //    }
-    //
-    //    #[test]
-    //    fn src_not_dir() {
-    //        let src = "./Cargo.toml";
-    //        let dest = "/";
-    //        assert_eq!(parse_args(src, dest), Err(()));
-    //    }
-    //
-    //    #[test]
-    //    fn fail_create_dest() {
-    //        let src = ".";
-    //        let dest = "/asdf";
-    //        assert_eq!(parse_args(src, dest), Err(()));
-    //    }
-    //
-    //    #[test]
-    //    fn parse_success() {
-    //        const TEST_SRC: &str = "./src";
-    //        const TEST_DIR: &str = "parse_success";
-    //
-    //        assert_eq!(parse_args(TEST_SRC, TEST_DIR), Ok(()));
-    //
-    //        let test_dest = fs::read_dir(TEST_DIR);
-    //        assert_eq!(test_dest.is_ok(), true);
-    //
-    //        fs::remove_dir(TEST_DIR).unwrap();
-    //    }
 }
