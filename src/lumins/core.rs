@@ -41,17 +41,30 @@ pub fn synchronize(src: &str, dest: &str, flags: u32) -> Result<(), io::Error> {
         file_ops::delete_files(files_to_delete, &dest);
     }
 
-    let dirs_to_copy = src_dirs.par_difference(&dest_dirs);
-    file_ops::copy_files(dirs_to_copy, &src, &dest);
+    // Determine whether or not to run sequentially
+    let sequential = parse::contains_flag(flags, parse::Flag::Sequential);
 
-    let symlinks_to_copy = src_symlinks.par_difference(&dest_symlinks);
-    file_ops::copy_files(symlinks_to_copy, &src, &dest);
+    if sequential {
+        let dirs_to_copy = src_dirs.difference(&dest_dirs);
+        let symlinks_to_copy = src_symlinks.difference(&dest_symlinks);
+        let files_to_copy = src_files.difference(&dest_files);
+        let files_to_compare = src_files.intersection(&dest_files);
 
-    let files_to_copy = src_files.par_difference(&dest_files);
-    let files_to_compare = src_files.par_intersection(&dest_files);
+        file_ops::copy_files_sequential(dirs_to_copy, &src, &dest);
+        file_ops::copy_files_sequential(symlinks_to_copy, &src, &dest);
+        file_ops::copy_files_sequential(files_to_copy, &src, &dest);
+        file_ops::compare_and_copy_files_sequential(files_to_compare, &src, &dest, flags);
+    } else {
+        let dirs_to_copy = src_dirs.par_difference(&dest_dirs);
+        let symlinks_to_copy = src_symlinks.par_difference(&dest_symlinks);
+        let files_to_copy = src_files.par_difference(&dest_files);
+        let files_to_compare = src_files.par_intersection(&dest_files);
 
-    file_ops::copy_files(files_to_copy, &src, &dest);
-    file_ops::compare_and_copy_files(files_to_compare, &src, &dest, flags);
+        file_ops::copy_files(dirs_to_copy, &src, &dest);
+        file_ops::copy_files(symlinks_to_copy, &src, &dest);
+        file_ops::copy_files(files_to_copy, &src, &dest);
+        file_ops::compare_and_copy_files(files_to_compare, &src, &dest, flags);
+    }
 
     // Delete dirs in the correct order
     if delete {
@@ -74,7 +87,7 @@ pub fn synchronize(src: &str, dest: &str, flags: u32) -> Result<(), io::Error> {
 /// but is not limited to just these cases:
 /// * `src` is an invalid directory
 /// * `dest` is an invalid directory
-pub fn copy(src: &str, dest: &str) -> Result<(), io::Error> {
+pub fn copy(src: &str, dest: &str, flags: u32) -> Result<(), io::Error> {
     // Retrieve data from src directory about files, dirs, symlinks
     let src_file_sets = file_ops::get_all_files(&src)?;
     let src_files = src_file_sets.files();
@@ -82,9 +95,15 @@ pub fn copy(src: &str, dest: &str) -> Result<(), io::Error> {
     let src_symlinks = src_file_sets.symlinks();
 
     // Copy everything
-    file_ops::copy_files(src_dirs.into_par_iter(), &src, &dest);
-    file_ops::copy_files(src_files.into_par_iter(), &src, &dest);
-    file_ops::copy_files(src_symlinks.into_par_iter(), &src, &dest);
+    if parse::contains_flag(flags, parse::Flag::Sequential) {
+        file_ops::copy_files_sequential(src_dirs.into_iter(), &src, &dest);
+        file_ops::copy_files_sequential(src_files.into_iter(), &src, &dest);
+        file_ops::copy_files_sequential(src_symlinks.into_iter(), &src, &dest);
+    } else {
+        file_ops::copy_files(src_dirs.into_par_iter(), &src, &dest);
+        file_ops::copy_files(src_files.into_par_iter(), &src, &dest);
+        file_ops::copy_files(src_symlinks.into_par_iter(), &src, &dest);
+    }
 
     Ok(())
 }
@@ -239,13 +258,13 @@ mod test_copy {
 
     #[test]
     fn invalid_src() {
-        assert_eq!(copy("/?", "src").is_err(), true);
+        assert_eq!(copy("/?", "src", 0).is_err(), true);
     }
 
     #[test]
     fn invalid_dest() {
         const TEST_DIR: &str = "test_copy_invalid_dest";
-        assert_eq!(copy("src", TEST_DIR).is_ok(), true);
+        assert_eq!(copy("src", TEST_DIR, 0).is_ok(), true);
         fs::remove_dir_all(TEST_DIR).unwrap();
     }
 
@@ -255,7 +274,7 @@ mod test_copy {
         const TEST_DIR: &str = "test_copy_dir1";
         fs::create_dir_all(TEST_DIR).unwrap();
 
-        assert_eq!(copy("src", TEST_DIR).is_ok(), true);
+        assert_eq!(copy("src", TEST_DIR, 0).is_ok(), true);
 
         let diff = Command::new("diff")
             .args(&["-r", "src", TEST_DIR])

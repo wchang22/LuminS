@@ -9,6 +9,7 @@ pub enum Flag {
     NoDelete = 1 << 1,
     Secure = 1 << 2,
     Verbose = 1 << 3,
+    Sequential = 1 << 4,
 }
 
 /// Struct to represent the result of parsing args
@@ -66,6 +67,9 @@ pub fn parse_args<'a>(args: &'a ArgMatches) -> Result<ParseResult<'a>, ()> {
     }
     if args.is_present("secure") {
         flags |= Flag::Secure as u32;
+    }
+    if args.is_present("sequential") {
+        flags |= Flag::Sequential as u32;
     }
 
     Ok(ParseResult { src, dest, flags })

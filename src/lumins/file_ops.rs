@@ -173,7 +173,7 @@ impl FileSets {
 }
 
 /// Compares all files in `files_to_compare` in `src` with all files in `files_to_compare` in `dest`
-/// and copies them over if they are different
+/// and copies them over if they are different, in parallel
 ///
 /// # Arguments
 /// * `files_to_compare`: files to compare
@@ -188,35 +188,71 @@ where
     S: FileOps + Sync + 'a,
 {
     files_to_compare.for_each(|file| {
-        let secure = parse::contains_flag(flags, parse::Flag::Secure);
-
-        let mut src_file_hash_secure = None;
-        let mut src_file_hash = None;
-        if secure {
-            src_file_hash_secure = hash_file_secure(file, &src);
-        } else {
-            src_file_hash = hash_file(file, &src);
-        }
-
-        if (secure && src_file_hash_secure.is_none()) || (!secure && src_file_hash.is_none()) {
-            copy_file(file, &src, &dest);
-            return;
-        }
-
-        let mut dest_file_hash_secure = None;
-        let mut dest_file_hash = None;
-        if secure {
-            dest_file_hash_secure = hash_file_secure(file, &dest);
-        } else {
-            dest_file_hash = hash_file(file, &dest);
-        }
-
-        if (secure && src_file_hash_secure != dest_file_hash_secure)
-            || (!secure && src_file_hash != dest_file_hash)
-        {
-            copy_file(file, &src, &dest);
-        }
+        compare_and_copy_file(file, src, dest, flags);
     });
+}
+
+/// Compares all files in `files_to_compare` in `src` with all files in `files_to_compare` in `dest`
+/// and copies them over if they are different, sequentially
+///
+/// # Arguments
+/// * `files_to_compare`: files to compare
+/// * `src`: base directory of the files to copy from, such that for all `file` in
+/// `files_to_compare`, `src + file.path()` is the absolute path of the source file
+/// * `dest`: base directory of the files to copy to, such that for all `file` in
+/// `files_to_compare`, `dest + file.path()` is the absolute path of the destination file
+/// * `flags`: bitfield for flags
+pub fn compare_and_copy_files_sequential<'a, T, S>(files_to_compare: T, src: &str, dest: &str, flags: u32)
+    where
+        T: IntoIterator<Item = &'a S>,
+        S: FileOps + Sync + 'a,
+{
+    for file in files_to_compare {
+        compare_and_copy_file(file, src, dest, flags);
+    }
+}
+
+/// Compares the given file and copies the src file over if it differs from the dest file
+///
+/// # Arguments
+/// * `file_to_compare`: file to compare
+/// * `src`: base directory of the file to copy from, such that `src + file.path()`
+/// is the absolute path of the source file
+/// * `dest`: base directory of the files to copy to, such that `dest + file.path()`
+/// is the absolute path of the destination file
+/// * `flags`: bitfield for flags
+pub fn compare_and_copy_file<S>(file_to_compare: &S, src: &str, dest: &str, flags: u32)
+where
+    S: FileOps,
+{
+    let secure = parse::contains_flag(flags, parse::Flag::Secure);
+
+    let mut src_file_hash_secure = None;
+    let mut src_file_hash = None;
+    if secure {
+        src_file_hash_secure = hash_file_secure(file_to_compare, &src);
+    } else {
+        src_file_hash = hash_file(file_to_compare, &src);
+    }
+
+    if (secure && src_file_hash_secure.is_none()) || (!secure && src_file_hash.is_none()) {
+        copy_file(file_to_compare, &src, &dest);
+        return;
+    }
+
+    let mut dest_file_hash_secure = None;
+    let mut dest_file_hash = None;
+    if secure {
+        dest_file_hash_secure = hash_file_secure(file_to_compare, &dest);
+    } else {
+        dest_file_hash = hash_file(file_to_compare, &dest);
+    }
+
+    if (secure && src_file_hash_secure != dest_file_hash_secure)
+        || (!secure && src_file_hash != dest_file_hash)
+    {
+        copy_file(file_to_compare, &src, &dest);
+    }
 }
 
 /// Copies all given files from `src` to `dest` in parallel
@@ -235,6 +271,24 @@ where
     files_to_copy.for_each(|file| {
         copy_file(file, &src, &dest);
     });
+}
+
+/// Copies all given files from `src` to `dest` in sequentially
+///
+/// # Arguments
+/// * `files_to_copy`: files to copy
+/// * `src`: base directory of the files to copy from, such that for all `file` in
+/// `files_to_copy`, `src + file.path()` is the absolute path of the source file
+/// * `dest`: base directory of the files to copy to, such that for all `file` in
+/// `files_to_copy`, `dest + file.path()` is the absolute path of the destination file
+pub fn copy_files_sequential<'a, T, S>(files_to_copy: T, src: &str, dest: &str)
+where
+    T: IntoIterator<Item = &'a S>,
+    S: FileOps + Sync + 'a,
+{
+    for file in files_to_copy {
+        copy_file(file, &src, &dest);
+    }
 }
 
 /// Copies a single file from `src` to `dest`

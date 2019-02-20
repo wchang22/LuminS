@@ -32,7 +32,7 @@ fn main() {
     }
 
     if parse::contains_flag(flags, parse::Flag::Copy) {
-        result = core::copy(src, dest);
+        result = core::copy(src, dest, flags);
     } else {
         result = core::synchronize(src, dest, flags);
     }
@@ -45,14 +45,15 @@ fn main() {
 
 #[cfg(test)]
 mod test_main {
-    use std::process::Command;
     use std::fs;
+    use std::process::Command;
 
     #[test]
     fn test_no_args() {
         Command::new("cargo")
             .args(&["build", "--release"])
-            .output().unwrap();
+            .output()
+            .unwrap();
 
         let output = Command::new("target/release/lumins").output().unwrap();
 
@@ -63,7 +64,8 @@ mod test_main {
     fn test_no_dest() {
         Command::new("cargo")
             .args(&["build", "--release"])
-            .output().unwrap();
+            .output()
+            .unwrap();
 
         let output = Command::new("target/release/lumins")
             .args(&["src"])
@@ -77,7 +79,8 @@ mod test_main {
     fn test_too_many_args() {
         Command::new("cargo")
             .args(&["build", "--release"])
-            .output().unwrap();
+            .output()
+            .unwrap();
 
         let output = Command::new("target/release/lumins")
             .args(&["src", "dest", "dest"])
@@ -91,7 +94,8 @@ mod test_main {
     fn test_invalid_args() {
         Command::new("cargo")
             .args(&["build", "--release"])
-            .output().unwrap();
+            .output()
+            .unwrap();
 
         let output = Command::new("target/release/lumins")
             .args(&["a", "dest"])
@@ -106,7 +110,8 @@ mod test_main {
     fn test_copy() {
         Command::new("cargo")
             .args(&["build", "--release"])
-            .output().unwrap();
+            .output()
+            .unwrap();
 
         const TEST_SOURCE: &str = "target/debug";
         const TEST_DEST: &str = "test_main_test_copy";
@@ -132,7 +137,8 @@ mod test_main {
     fn test_secure() {
         Command::new("cargo")
             .args(&["build", "--release"])
-            .output().unwrap();
+            .output()
+            .unwrap();
 
         const TEST_SOURCE: &str = "target/debug";
         const TEST_DEST: &str = "test_main_test_secure";
@@ -158,7 +164,8 @@ mod test_main {
     fn test_no_delete() {
         Command::new("cargo")
             .args(&["build", "--release"])
-            .output().unwrap();
+            .output()
+            .unwrap();
 
         const TEST_SOURCE1: &str = "test_main_test_no_delete_source1";
         const TEST_SOURCE2: &str = "test_main_test_no_delete_source2";
