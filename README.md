@@ -14,7 +14,7 @@
     <tr><td><b>Powered by the <a href="https://github.com/rayon-rs/rayon">Rayon</a> library for high parallel perfomance</b></td></tr>
     <tr><td><b>Supported on Unix platforms</b></td></tr>
     <tr><td><b>Extremely fast at synchronizing directories with large quantities of files</b></td></tr>
-    <tr><td><b>Multithreaded copy, delete, and sync</b></td></tr>
+    <tr><td><b>Multithreaded copy, remove, and sync</b></td></tr>
 </table>
 
 <h2>Usage</h2>
@@ -28,9 +28,9 @@ FLAGS:
     -V, --version    Prints version information
 
 SUBCOMMANDS:
-    copy    Multithreaded directory copy [aliases: c]
-    del     Multithreaded directory remove [aliases: d]
+    cp      Multithreaded directory copy
     help    Prints this message or the help of the given subcommand(s)
+    rm      Multithreaded directory remove
     sync    Multithreaded directory synchronization [aliases: s]
 ```
 <h3>Sync</h3>

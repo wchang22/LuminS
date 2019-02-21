@@ -357,15 +357,15 @@ where
 /// A vector of file paths in descending order by number of components
 ///
 /// # Examples
-/// ```
 /// ["a", "a/b", "a/b/c"] becomes ["a/b/c", "a/b", "a"]
 /// ["/usr", "/", "/usr/bin", "/etc"] becomes ["/usr/bin", "/usr", "/etc", "/"]
-/// ```
 pub fn sort_files<'a, T, S>(files_to_sort: T) -> Vec<&'a S>
 where
     T: ParallelIterator<Item = &'a S>,
     S: FileOps + Sync + 'a,
 {
+    let a = vec!['a'];
+    a.par_iter();
     let mut files_to_sort = Vec::from_par_iter(files_to_sort);
     files_to_sort.par_sort_unstable_by(|a, b| {
         b.path()
@@ -1283,6 +1283,7 @@ mod test_copy_files {
             fs::create_dir_all([test_dir_out, SUB_DIR].join("/")).unwrap();
             fs::File::create([test_dir_out, "main.rs"].join("/")).unwrap();
             fs::File::create([test_dir_out, "cli.yml"].join("/")).unwrap();
+            fs::File::create([test_dir_out, "lib.rs"].join("/")).unwrap();
             Command::new("chmod")
                 .arg("000")
                 .arg([test_dir_out, SUB_DIR].join("/"))
@@ -1296,6 +1297,11 @@ mod test_copy_files {
             Command::new("chmod")
                 .arg("000")
                 .arg([test_dir_out, "cli.yml"].join("/"))
+                .output()
+                .unwrap();
+            Command::new("chmod")
+                .arg("000")
+                .arg([test_dir_out, "lib.rs"].join("/"))
                 .output()
                 .unwrap();
         }
@@ -1329,6 +1335,10 @@ mod test_copy_files {
         });
         files.insert(File {
             path: PathBuf::from("cli.yml"),
+            size: 0,
+        });
+        files.insert(File {
+            path: PathBuf::from("lib.rs"),
             size: 0,
         });
         let mut dirs = HashSet::new();

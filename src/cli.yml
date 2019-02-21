@@ -7,9 +7,8 @@ settings:
   - ArgRequiredElseHelp
 
 subcommands:
-  - copy:
+  - cp:
       about: Multithreaded directory copy
-      visible_alias: c
       settings:
         - ArgRequiredElseHelp
       args:
@@ -29,9 +28,8 @@ subcommands:
             help: Destination directory
             required: true
             index: 2
-  - del:
+  - rm:
       about: Multithreaded directory remove
-      visible_alias: d
       settings:
         - ArgRequiredElseHelp
       args:
