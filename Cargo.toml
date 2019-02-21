@@ -1,6 +1,6 @@
 [package]
 name = "lms"
-version = "1.0.0"
+version = "0.1.0"
 authors = ["Wesley Chang <wesleycanada@gmail.com>"]
 edition = "2018"
 
