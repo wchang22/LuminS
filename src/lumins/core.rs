@@ -1,23 +1,28 @@
+use std::hash::BuildHasher;
 use std::io;
+use std::marker::{Send, Sync};
 
 use rayon::prelude::*;
 use rayon_hash::HashSet;
 
-use crate::lumins::{file_ops, parse::Flag};
+use crate::lumins::{file_ops, file_ops::Dir, parse::Flag};
 
 /// Synchronizes all files, directories, and symlinks in `dest` with `src`
 ///
 /// # Arguments
 /// * `src`: Source directory
 /// * `dest`: Destination directory
-/// * `flags`: set for flags
+/// * `flags`: set for Flag's
 ///
 /// # Errors
 /// This function will return an error in the following situations,
 /// but is not limited to just these cases:
 /// * `src` is an invalid directory
 /// * `dest` is an invalid directory
-pub fn synchronize(src: &str, dest: &str, flags: HashSet<Flag>) -> Result<(), io::Error> {
+pub fn synchronize<H>(src: &str, dest: &str, flags: HashSet<Flag, H>) -> Result<(), io::Error>
+where
+    H: BuildHasher + Sync + Send,
+{
     // Retrieve data from src directory about files, dirs, symlinks
     let src_file_sets = file_ops::get_all_files(&src)?;
     let src_files = src_file_sets.files();
@@ -43,29 +48,26 @@ pub fn synchronize(src: &str, dest: &str, flags: HashSet<Flag>) -> Result<(), io
     }
 
     // Determine whether or not to run sequentially
-    match flags.contains(&Flag::Sequential) {
-        true => {
-            let dirs_to_copy = src_dirs.difference(&dest_dirs);
-            let symlinks_to_copy = src_symlinks.difference(&dest_symlinks);
-            let files_to_copy = src_files.difference(&dest_files);
-            let files_to_compare = src_files.intersection(&dest_files);
+    if flags.contains(&Flag::Sequential) {
+        let dirs_to_copy = src_dirs.difference(&dest_dirs);
+        let symlinks_to_copy = src_symlinks.difference(&dest_symlinks);
+        let files_to_copy = src_files.difference(&dest_files);
+        let files_to_compare = src_files.intersection(&dest_files);
 
-            file_ops::copy_files_sequential(dirs_to_copy, &src, &dest);
-            file_ops::copy_files_sequential(symlinks_to_copy, &src, &dest);
-            file_ops::copy_files_sequential(files_to_copy, &src, &dest);
-            file_ops::compare_and_copy_files_sequential(files_to_compare, &src, &dest, flags);
-        }
-        false => {
-            let dirs_to_copy = src_dirs.par_difference(&dest_dirs);
-            let symlinks_to_copy = src_symlinks.par_difference(&dest_symlinks);
-            let files_to_copy = src_files.par_difference(&dest_files);
-            let files_to_compare = src_files.par_intersection(&dest_files);
+        file_ops::copy_files_sequential(dirs_to_copy, &src, &dest);
+        file_ops::copy_files_sequential(symlinks_to_copy, &src, &dest);
+        file_ops::copy_files_sequential(files_to_copy, &src, &dest);
+        file_ops::compare_and_copy_files_sequential(files_to_compare, &src, &dest, flags);
+    } else {
+        let dirs_to_copy = src_dirs.par_difference(&dest_dirs);
+        let symlinks_to_copy = src_symlinks.par_difference(&dest_symlinks);
+        let files_to_copy = src_files.par_difference(&dest_files);
+        let files_to_compare = src_files.par_intersection(&dest_files);
 
-            file_ops::copy_files(dirs_to_copy, &src, &dest);
-            file_ops::copy_files(symlinks_to_copy, &src, &dest);
-            file_ops::copy_files(files_to_copy, &src, &dest);
-            file_ops::compare_and_copy_files(files_to_compare, &src, &dest, flags);
-        }
+        file_ops::copy_files(dirs_to_copy, &src, &dest);
+        file_ops::copy_files(symlinks_to_copy, &src, &dest);
+        file_ops::copy_files(files_to_copy, &src, &dest);
+        file_ops::compare_and_copy_files(files_to_compare, &src, &dest, flags);
     }
 
     // Delete dirs in the correct order
@@ -83,13 +85,17 @@ pub fn synchronize(src: &str, dest: &str, flags: HashSet<Flag>) -> Result<(), io
 /// # Arguments
 /// * `src`: Source directory
 /// * `dest`: Destination directory
+/// * `flags`: set for Flag's
 ///
 /// # Errors
 /// This function will return an error in the following situations,
 /// but is not limited to just these cases:
 /// * `src` is an invalid directory
 /// * `dest` is an invalid directory
-pub fn copy(src: &str, dest: &str, flags: HashSet<Flag>) -> Result<(), io::Error> {
+pub fn copy<H>(src: &str, dest: &str, flags: HashSet<Flag, H>) -> Result<(), io::Error>
+where
+    H: BuildHasher + Sync + Send,
+{
     // Retrieve data from src directory about files, dirs, symlinks
     let src_file_sets = file_ops::get_all_files(&src)?;
     let src_files = src_file_sets.files();
@@ -109,6 +115,51 @@ pub fn copy(src: &str, dest: &str, flags: HashSet<Flag>) -> Result<(), io::Error
 
     Ok(())
 }
+
+/// Deletes directory `target`
+///
+/// # Arguments
+/// * `target`: Target directory
+/// * `flags`: set for Flag's
+///
+/// # Errors
+/// This function will return an error in the following situations,
+/// but is not limited to just these cases:
+/// * `target` is an invalid directory
+pub fn delete<H>(target: &str, flags: HashSet<Flag, H>) -> Result<(), io::Error>
+where
+    H: BuildHasher + Sync + Send,
+{
+    // Retrieve data from target directory about files, dirs, symlinks
+    let target_file_sets = file_ops::get_all_files(&target)?;
+    let target_files = target_file_sets.files();
+    let target_dirs = target_file_sets.dirs();
+    let target_symlinks = target_file_sets.symlinks();
+
+    // Delete everything
+    if flags.contains(&Flag::Sequential) {
+        file_ops::delete_files_sequential(target_files.into_iter(), &target);
+        file_ops::delete_files_sequential(target_symlinks.into_iter(), &target);
+    } else {
+        file_ops::delete_files(target_files.into_par_iter(), &target);
+        file_ops::delete_files(target_symlinks.into_par_iter(), &target);
+    }
+
+    // Directories must always be deleted sequentially so that they are deleted in the correct order
+    let mut target_dirs: Vec<&file_ops::Dir> = file_ops::sort_files(target_dirs.into_par_iter());
+
+    // Delete the target directory last
+    let root_dir = Dir::from("");
+    target_dirs.push(&root_dir);
+
+    file_ops::delete_files_sequential(target_dirs.into_iter(), &target);
+
+    Ok(())
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Tests
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod test_synchronize {
@@ -287,7 +338,7 @@ mod test_copy {
 
     #[cfg(target_family = "unix")]
     #[test]
-    fn dir_1() {
+    fn dir1() {
         const TEST_DIR: &str = "test_copy_dir1";
         fs::create_dir_all(TEST_DIR).unwrap();
 
@@ -322,5 +373,52 @@ mod test_copy {
         assert_eq!(diff.status.success(), true);
 
         fs::remove_dir_all(TEST_DIR).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod test_delete {
+    use super::*;
+    use std::fs;
+    use std::process::Command;
+
+    #[test]
+    fn invalid_target() {
+        assert_eq!(delete("/?", HashSet::new()).is_err(), true);
+    }
+
+    #[cfg(target_family = "unix")]
+    #[test]
+    fn dir1() {
+        const TEST_DIR: &str = "test_delete_dir1";
+        fs::create_dir_all(TEST_DIR).unwrap();
+
+        Command::new("cp")
+            .args(&["-r", "target/debug", TEST_DIR])
+            .output()
+            .unwrap();
+
+        assert_eq!(delete(TEST_DIR, HashSet::new()).is_ok(), true);
+
+        assert_eq!(fs::read_dir(TEST_DIR).is_err(), true);
+    }
+
+    #[cfg(target_family = "unix")]
+    #[test]
+    fn flags() {
+        const TEST_DIR: &str = "test_delete_flags";
+        fs::create_dir_all(TEST_DIR).unwrap();
+
+        let mut flags = HashSet::new();
+        flags.insert(Flag::Sequential);
+
+        Command::new("cp")
+            .args(&["-r", "src", TEST_DIR])
+            .output()
+            .unwrap();
+
+        assert_eq!(delete(TEST_DIR, flags).is_ok(), true);
+
+        assert_eq!(fs::read_dir(TEST_DIR).is_err(), true);
     }
 }

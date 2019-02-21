@@ -1,33 +1,83 @@
 name: LuminS
-version: "1.1.0"
-about: Luminous Synchronize - A fast and reliable alternative to rsync for synchronizing local files
+version: "1.0.0"
+about: Luminous Synchronize - A fast and reliable multithreaded alternative to rsync
+  for synchronizing local files
 
-args:
+settings:
+  - ArgRequiredElseHelp
+
+subcommands:
   - copy:
-      short: c
-      long: copy
-      help: Ignores synchronization checks and simply copies all files over
-  - nodelete:
-      short: n
-      long: nodelete
-      help: Do not delete any destination files
-  - secure:
-      short: s
-      long: secure
-      help: Use a cryptographic hash function for hashing similar files
-  - verbose:
-      short: v
-      long: verbose
-      help: Verbose outputs
-  - sequential:
-      short: S
-      long: sequential
-      help: Synchronize files sequentially instead of in parallel
-  - SOURCE:
-      help: Source directory
-      required: true
-      index: 1
-  - DESTINATION:
-      help: Destination directory
-      required: true
-      index: 2
+      about: Multithreaded directory copy
+      visible_alias: c
+      settings:
+        - ArgRequiredElseHelp
+      args:
+        - verbose:
+            short: v
+            long: verbose
+            help: Verbose outputs
+        - sequential:
+            short: S
+            long: sequential
+            help: Copy files sequentially instead of in parallel
+        - SOURCE:
+            help: Source directory
+            required: true
+            index: 1
+        - DESTINATION:
+            help: Destination directory
+            required: true
+            index: 2
+  - del:
+      about: Multithreaded directory remove
+      visible_alias: d
+      settings:
+        - ArgRequiredElseHelp
+      args:
+        - verbose:
+            short: v
+            long: verbose
+            help: Verbose outputs
+        - sequential:
+            short: S
+            long: sequential
+            help: Delete files sequentially instead of in parallel
+        - TARGET:
+            help: Target directory
+            required: true
+            index: 1
+  - sync:
+      about: Multithreaded directory synchronization
+      visible_alias: s
+      settings:
+        - ArgRequiredElseHelp
+      args:
+        - nodelete:
+            short: n
+            long: nodelete
+            help: Do not delete any destination files
+        - secure:
+            short: s
+            long: secure
+            help: Use a cryptographic hash function for hashing similar files
+        - verbose:
+            short: v
+            long: verbose
+            help: Verbose outputs
+        - sequential:
+            short: S
+            long: sequential
+            help: Copy files sequentially instead of in parallel
+        - SOURCE:
+            help: Source directory
+            required: true
+            index: 1
+        - DESTINATION:
+            help: Destination directory
+            required: true
+            index: 2
+
+
+
+

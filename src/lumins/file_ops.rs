@@ -1,4 +1,5 @@
-use std::marker::Sync;
+use std::hash::BuildHasher;
+use std::marker::{Send, Sync};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::{fs, io};
@@ -66,6 +67,14 @@ impl FileOps for Dir {
         match fs::create_dir_all(&dest) {
             Ok(_) => info!("Creating dir {:?}", dest),
             Err(e) => eprintln!("Error -- Creating dir {:?}: {}", dest, e),
+        }
+    }
+}
+
+impl Dir {
+    pub fn from(dir: &str) -> Self {
+        Dir {
+            path: PathBuf::from(dir),
         }
     }
 }
@@ -155,15 +164,16 @@ impl FileSets {
 /// `files_to_compare`, `src + file.path()` is the absolute path of the source file
 /// * `dest`: base directory of the files to copy to, such that for all `file` in
 /// `files_to_compare`, `dest + file.path()` is the absolute path of the destination file
-/// * `flags`: set for flags
-pub fn compare_and_copy_files<'a, T, S>(
+/// * `flags`: set for Flag's
+pub fn compare_and_copy_files<'a, T, S, H>(
     files_to_compare: T,
     src: &str,
     dest: &str,
-    flags: HashSet<Flag>,
+    flags: HashSet<Flag, H>,
 ) where
     T: ParallelIterator<Item = &'a S>,
     S: FileOps + Sync + 'a,
+    H: BuildHasher + Sync + Send,
 {
     let flags = Arc::new(flags);
     files_to_compare.for_each(|file| {
@@ -180,15 +190,16 @@ pub fn compare_and_copy_files<'a, T, S>(
 /// `files_to_compare`, `src + file.path()` is the absolute path of the source file
 /// * `dest`: base directory of the files to copy to, such that for all `file` in
 /// `files_to_compare`, `dest + file.path()` is the absolute path of the destination file
-/// * `flags`: set for flags
-pub fn compare_and_copy_files_sequential<'a, T, S>(
+/// * `flags`: set for Flag's
+pub fn compare_and_copy_files_sequential<'a, T, S, H>(
     files_to_compare: T,
     src: &str,
     dest: &str,
-    flags: HashSet<Flag>,
+    flags: HashSet<Flag, H>,
 ) where
     T: IntoIterator<Item = &'a S>,
     S: FileOps + Sync + 'a,
+    H: BuildHasher + Sync + Send,
 {
     let flags = Arc::new(flags);
     for file in files_to_compare {
@@ -204,43 +215,41 @@ pub fn compare_and_copy_files_sequential<'a, T, S>(
 /// is the absolute path of the source file
 /// * `dest`: base directory of the files to copy to, such that `dest + file.path()`
 /// is the absolute path of the destination file
-/// * `flags`: set for flags
-pub fn compare_and_copy_file<S>(
+/// * `flags`: set for Flag's
+fn compare_and_copy_file<S, H>(
     file_to_compare: &S,
     src: &str,
     dest: &str,
-    flags: Arc<HashSet<Flag>>,
+    flags: Arc<HashSet<Flag, H>>,
 ) where
     S: FileOps,
+    H: BuildHasher + Sync + Send,
 {
-    match flags.contains(&Flag::Secure) {
-        true => {
-            let src_file_hash_secure = hash_file_secure(file_to_compare, &src);
+    if flags.contains(&Flag::Secure) {
+        let src_file_hash_secure = hash_file_secure(file_to_compare, &src);
 
-            if src_file_hash_secure.is_none() {
-                copy_file(file_to_compare, &src, &dest);
-                return;
-            }
-
-            let dest_file_hash_secure = hash_file_secure(file_to_compare, &dest);
-
-            if src_file_hash_secure != dest_file_hash_secure {
-                copy_file(file_to_compare, &src, &dest);
-            }
+        if src_file_hash_secure.is_none() {
+            copy_file(file_to_compare, &src, &dest);
+            return;
         }
-        false => {
-            let src_file_hash = hash_file(file_to_compare, &src);
 
-            if src_file_hash.is_none() {
-                copy_file(file_to_compare, &src, &dest);
-                return;
-            }
+        let dest_file_hash_secure = hash_file_secure(file_to_compare, &dest);
 
-            let dest_file_hash = hash_file(file_to_compare, &dest);
+        if src_file_hash_secure != dest_file_hash_secure {
+            copy_file(file_to_compare, &src, &dest);
+        }
+    } else {
+        let src_file_hash = hash_file(file_to_compare, &src);
 
-            if src_file_hash != dest_file_hash {
-                copy_file(file_to_compare, &src, &dest);
-            }
+        if src_file_hash.is_none() {
+            copy_file(file_to_compare, &src, &dest);
+            return;
+        }
+
+        let dest_file_hash = hash_file(file_to_compare, &dest);
+
+        if src_file_hash != dest_file_hash {
+            copy_file(file_to_compare, &src, &dest);
         }
     }
 }
@@ -523,6 +532,25 @@ fn get_all_files_helper(src: &PathBuf, base: &str) -> Result<FileSets, io::Error
     }
 
     Ok(FileSets::with(files, dirs, symlinks))
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Tests
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod test_dir {
+    use super::*;
+
+    #[test]
+    fn create_dir() {
+        assert_eq!(
+            Dir::from("."),
+            Dir {
+                path: PathBuf::from("."),
+            }
+        )
+    }
 }
 
 #[cfg(test)]

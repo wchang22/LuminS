@@ -7,17 +7,22 @@ use env_logger::Builder;
 use log::LevelFilter;
 
 mod lumins;
-pub use lumins::{core, file_ops, parse, parse::Flag};
+pub use lumins::parse;
+use lumins::parse::{Flag, SubCommandType};
+pub use lumins::{core, file_ops};
 
 fn main() {
+    // Parse command args
     let yaml = load_yaml!("cli.yml");
     let args = App::from_yaml(yaml).get_matches();
 
-    let (src, dest, flags) = match parse::parse_args(&args) {
-        Ok(f) => (f.src, f.dest, f.flags),
+    // Determine subcommands and flags from args
+    let (sub_command, flags) = match parse::parse_args(&args) {
+        Ok(f) => (f.sub_command, f.flags),
         Err(_) => process::exit(1),
     };
 
+    // If verbose, enable logging
     if flags.contains(&Flag::Verbose) {
         env::set_var("RUST_LOG", "info");
         Builder::new()
@@ -26,17 +31,25 @@ fn main() {
             .init();
     }
 
-    let result = if flags.contains(&Flag::Copy) {
-        core::copy(src, dest, flags)
-    } else {
-        core::synchronize(src, dest, flags)
+    // Call correct core function depending on subcommand
+    let result = match sub_command.sub_command_type {
+        SubCommandType::Copy => core::copy(sub_command.src.unwrap(), sub_command.dest, flags),
+        SubCommandType::Delete => core::delete(sub_command.dest, flags),
+        SubCommandType::Synchronize => {
+            core::synchronize(sub_command.src.unwrap(), sub_command.dest, flags)
+        }
     };
 
+    // If error, print to stderr and exit
     if let Err(e) = result {
         eprintln!("{}", e);
         process::exit(1);
     }
 }
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Tests
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod test_main {
@@ -50,7 +63,7 @@ mod test_main {
             .output()
             .unwrap();
 
-        let output = Command::new("target/release/lumins").output().unwrap();
+        let output = Command::new("target/release/lms").output().unwrap();
 
         assert_eq!(output.status.success(), false);
     }
@@ -62,8 +75,8 @@ mod test_main {
             .output()
             .unwrap();
 
-        let output = Command::new("target/release/lumins")
-            .args(&["src"])
+        let output = Command::new("target/release/lms")
+            .args(&["sync", "src"])
             .output()
             .unwrap();
 
@@ -77,8 +90,8 @@ mod test_main {
             .output()
             .unwrap();
 
-        let output = Command::new("target/release/lumins")
-            .args(&["src", "dest", "dest"])
+        let output = Command::new("target/release/lms")
+            .args(&["sync", "src", "dest", "dest"])
             .output()
             .unwrap();
 
@@ -92,8 +105,8 @@ mod test_main {
             .output()
             .unwrap();
 
-        let output = Command::new("target/release/lumins")
-            .args(&["a", "dest"])
+        let output = Command::new("target/release/lms")
+            .args(&["sync", "a", "dest"])
             .output()
             .unwrap();
 
@@ -112,8 +125,8 @@ mod test_main {
         const TEST_DEST: &str = "test_main_test_copy";
         fs::create_dir_all(TEST_DEST).unwrap();
 
-        Command::new("target/release/lumins")
-            .args(&["-cv", TEST_SOURCE, TEST_DEST])
+        Command::new("target/release/lms")
+            .args(&["copy", "-v", TEST_SOURCE, TEST_DEST])
             .output()
             .unwrap();
 
@@ -139,8 +152,8 @@ mod test_main {
         const TEST_DEST: &str = "test_main_test_secure";
         fs::create_dir_all(TEST_DEST).unwrap();
 
-        Command::new("target/release/lumins")
-            .args(&["-s", TEST_SOURCE, TEST_DEST])
+        Command::new("target/release/lms")
+            .args(&["sync", "-s", TEST_SOURCE, TEST_DEST])
             .output()
             .unwrap();
 
@@ -166,8 +179,8 @@ mod test_main {
         const TEST_DEST: &str = "test_main_test_sequential";
         fs::create_dir_all(TEST_DEST).unwrap();
 
-        Command::new("target/release/lumins")
-            .args(&["-S", TEST_SOURCE, TEST_DEST])
+        Command::new("target/release/lms")
+            .args(&["sync", "-S", TEST_SOURCE, TEST_DEST])
             .output()
             .unwrap();
 
@@ -193,8 +206,8 @@ mod test_main {
         const TEST_DEST: &str = "test_main_test_sequential_copy";
         fs::create_dir_all(TEST_DEST).unwrap();
 
-        Command::new("target/release/lumins")
-            .args(&["-Sc", TEST_SOURCE, TEST_DEST])
+        Command::new("target/release/lms")
+            .args(&["copy", "-S", TEST_SOURCE, TEST_DEST])
             .output()
             .unwrap();
 
@@ -233,13 +246,13 @@ mod test_main {
         fs::copy(TEST_FILE1, [TEST_EXPECTED, TEST_FILE1].join("/")).unwrap();
         fs::copy(TEST_FILE2, [TEST_EXPECTED, TEST_FILE2].join("/")).unwrap();
 
-        Command::new("target/release/lumins")
-            .args(&["-c", TEST_SOURCE1, TEST_DEST])
+        Command::new("target/release/lms")
+            .args(&["copy", TEST_SOURCE1, TEST_DEST])
             .output()
             .unwrap();
 
-        Command::new("target/release/lumins")
-            .args(&["-n", TEST_SOURCE2, TEST_DEST])
+        Command::new("target/release/lms")
+            .args(&["sync", "-n", TEST_SOURCE2, TEST_DEST])
             .output()
             .unwrap();
 
@@ -254,5 +267,55 @@ mod test_main {
         fs::remove_dir_all(TEST_SOURCE2).unwrap();
         fs::remove_dir_all(TEST_DEST).unwrap();
         fs::remove_dir_all(TEST_EXPECTED).unwrap();
+    }
+
+    #[cfg(target_family = "unix")]
+    #[test]
+    fn test_delete() {
+        Command::new("cargo")
+            .args(&["build", "--release"])
+            .output()
+            .unwrap();
+
+        const TEST_SOURCE: &str = "target/debug";
+        const TEST_DEST: &str = "test_main_test_delete";
+        fs::create_dir_all(TEST_DEST).unwrap();
+
+        Command::new("cp")
+            .args(&["-r", TEST_SOURCE, TEST_DEST])
+            .output()
+            .unwrap();
+
+        Command::new("target/release/lms")
+            .args(&["del", TEST_DEST])
+            .output()
+            .unwrap();
+
+        assert_eq!(fs::read_dir(TEST_DEST).is_err(), true);
+    }
+
+    #[cfg(target_family = "unix")]
+    #[test]
+    fn test_sequential_delete() {
+        Command::new("cargo")
+            .args(&["build", "--release"])
+            .output()
+            .unwrap();
+
+        const TEST_SOURCE: &str = "target/debug";
+        const TEST_DEST: &str = "test_main_test_sequential_delete";
+        fs::create_dir_all(TEST_DEST).unwrap();
+
+        Command::new("cp")
+            .args(&["-r", TEST_SOURCE, TEST_DEST])
+            .output()
+            .unwrap();
+
+        Command::new("target/release/lms")
+            .args(&["del", "-S", TEST_DEST])
+            .output()
+            .unwrap();
+
+        assert_eq!(fs::read_dir(TEST_DEST).is_err(), true);
     }
 }
