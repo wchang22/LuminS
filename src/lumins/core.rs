@@ -126,7 +126,7 @@ where
 /// This function will return an error in the following situations,
 /// but is not limited to just these cases:
 /// * `target` is an invalid directory
-pub fn delete<H>(target: &str, flags: HashSet<Flag, H>) -> Result<(), io::Error>
+pub fn remove<H>(target: &str, flags: HashSet<Flag, H>) -> Result<(), io::Error>
 where
     H: BuildHasher + Sync + Send,
 {
@@ -377,20 +377,20 @@ mod test_copy {
 }
 
 #[cfg(test)]
-mod test_delete {
+mod test_remove {
     use super::*;
     use std::fs;
     use std::process::Command;
 
     #[test]
     fn invalid_target() {
-        assert_eq!(delete("/?", HashSet::new()).is_err(), true);
+        assert_eq!(remove("/?", HashSet::new()).is_err(), true);
     }
 
     #[cfg(target_family = "unix")]
     #[test]
     fn dir1() {
-        const TEST_DIR: &str = "test_delete_dir1";
+        const TEST_DIR: &str = "test_remove_dir1";
         fs::create_dir_all(TEST_DIR).unwrap();
 
         Command::new("cp")
@@ -398,7 +398,7 @@ mod test_delete {
             .output()
             .unwrap();
 
-        assert_eq!(delete(TEST_DIR, HashSet::new()).is_ok(), true);
+        assert_eq!(remove(TEST_DIR, HashSet::new()).is_ok(), true);
 
         assert_eq!(fs::read_dir(TEST_DIR).is_err(), true);
     }
@@ -406,7 +406,7 @@ mod test_delete {
     #[cfg(target_family = "unix")]
     #[test]
     fn flags() {
-        const TEST_DIR: &str = "test_delete_flags";
+        const TEST_DIR: &str = "test_remove_flags";
         fs::create_dir_all(TEST_DIR).unwrap();
 
         let mut flags = HashSet::new();
@@ -417,7 +417,7 @@ mod test_delete {
             .output()
             .unwrap();
 
-        assert_eq!(delete(TEST_DIR, flags).is_ok(), true);
+        assert_eq!(remove(TEST_DIR, flags).is_ok(), true);
 
         assert_eq!(fs::read_dir(TEST_DIR).is_err(), true);
     }

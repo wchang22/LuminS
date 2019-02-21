@@ -6,10 +6,8 @@ use clap::{load_yaml, App};
 use env_logger::Builder;
 use log::LevelFilter;
 
-mod lumins;
-pub use lumins::parse;
-use lumins::parse::{Flag, SubCommandType};
-pub use lumins::{core, file_ops};
+use lms::parse::{self, Flag, SubCommandType};
+use lms::core;
 
 fn main() {
     // Parse command args
@@ -34,7 +32,7 @@ fn main() {
     // Call correct core function depending on subcommand
     let result = match sub_command.sub_command_type {
         SubCommandType::Copy => core::copy(sub_command.src.unwrap(), sub_command.dest, flags),
-        SubCommandType::Delete => core::delete(sub_command.dest, flags),
+        SubCommandType::Remove => core::remove(sub_command.dest, flags),
         SubCommandType::Synchronize => {
             core::synchronize(sub_command.src.unwrap(), sub_command.dest, flags)
         }
@@ -126,7 +124,7 @@ mod test_main {
         fs::create_dir_all(TEST_DEST).unwrap();
 
         Command::new("target/release/lms")
-            .args(&["copy", "-v", TEST_SOURCE, TEST_DEST])
+            .args(&["cp", "-v", TEST_SOURCE, TEST_DEST])
             .output()
             .unwrap();
 
@@ -207,7 +205,7 @@ mod test_main {
         fs::create_dir_all(TEST_DEST).unwrap();
 
         Command::new("target/release/lms")
-            .args(&["copy", "-S", TEST_SOURCE, TEST_DEST])
+            .args(&["cp", "-S", TEST_SOURCE, TEST_DEST])
             .output()
             .unwrap();
 
@@ -247,7 +245,7 @@ mod test_main {
         fs::copy(TEST_FILE2, [TEST_EXPECTED, TEST_FILE2].join("/")).unwrap();
 
         Command::new("target/release/lms")
-            .args(&["copy", TEST_SOURCE1, TEST_DEST])
+            .args(&["cp", TEST_SOURCE1, TEST_DEST])
             .output()
             .unwrap();
 
@@ -271,14 +269,14 @@ mod test_main {
 
     #[cfg(target_family = "unix")]
     #[test]
-    fn test_delete() {
+    fn test_remove() {
         Command::new("cargo")
             .args(&["build", "--release"])
             .output()
             .unwrap();
 
         const TEST_SOURCE: &str = "target/debug";
-        const TEST_DEST: &str = "test_main_test_delete";
+        const TEST_DEST: &str = "test_main_test_remove";
         fs::create_dir_all(TEST_DEST).unwrap();
 
         Command::new("cp")
@@ -287,7 +285,7 @@ mod test_main {
             .unwrap();
 
         Command::new("target/release/lms")
-            .args(&["del", TEST_DEST])
+            .args(&["rm", TEST_DEST])
             .output()
             .unwrap();
 
@@ -296,14 +294,14 @@ mod test_main {
 
     #[cfg(target_family = "unix")]
     #[test]
-    fn test_sequential_delete() {
+    fn test_sequential_remove() {
         Command::new("cargo")
             .args(&["build", "--release"])
             .output()
             .unwrap();
 
         const TEST_SOURCE: &str = "target/debug";
-        const TEST_DEST: &str = "test_main_test_sequential_delete";
+        const TEST_DEST: &str = "test_main_test_sequential_remove";
         fs::create_dir_all(TEST_DEST).unwrap();
 
         Command::new("cp")
@@ -312,7 +310,7 @@ mod test_main {
             .unwrap();
 
         Command::new("target/release/lms")
-            .args(&["del", "-S", TEST_DEST])
+            .args(&["rm", "-S", TEST_DEST])
             .output()
             .unwrap();
 

@@ -7,7 +7,6 @@ use rayon_hash::HashSet;
 #[derive(Hash, Eq, PartialEq, Clone)]
 #[repr(u8)]
 pub enum Flag {
-    Copy,
     NoDelete,
     Secure,
     Verbose,
@@ -19,7 +18,7 @@ pub enum Flag {
 pub enum SubCommandType {
     Copy,
     Synchronize,
-    Delete,
+    Remove,
 }
 
 /// Struct to represent subcommands
@@ -50,15 +49,15 @@ pub fn parse_args<'a>(args: &'a ArgMatches) -> Result<ParseResult<'a>, ()> {
 
     // These values are safe to unwrap since the args are required
     let sub_command = match sub_command_name {
-        "copy" => SubCommand {
+        "cp" => SubCommand {
             src: Some(args.value_of("SOURCE").unwrap()),
             dest: args.value_of("DESTINATION").unwrap(),
             sub_command_type: SubCommandType::Copy,
         },
-        "del" => SubCommand {
+        "rm" => SubCommand {
             src: None,
             dest: args.value_of("TARGET").unwrap(),
-            sub_command_type: SubCommandType::Delete,
+            sub_command_type: SubCommandType::Remove,
         },
         "sync" => SubCommand {
             src: Some(args.value_of("SOURCE").unwrap()),
@@ -70,7 +69,7 @@ pub fn parse_args<'a>(args: &'a ArgMatches) -> Result<ParseResult<'a>, ()> {
 
     // Validate directories
     match sub_command.sub_command_type {
-        SubCommandType::Delete => {
+        SubCommandType::Remove => {
             // Target directory must be a valid directory
             match fs::metadata(sub_command.dest) {
                 Ok(m) => {
@@ -111,9 +110,8 @@ pub fn parse_args<'a>(args: &'a ArgMatches) -> Result<ParseResult<'a>, ()> {
         }
     }
 
-    static FLAG_NAMES: [&str; 5] = ["copy", "verbose", "nodelete", "secure", "sequential"];
-    static FLAGS: [Flag; 5] = [
-        Flag::Copy,
+    static FLAG_NAMES: [&str; 4] = ["verbose", "nodelete", "secure", "sequential"];
+    static FLAGS: [Flag; 4] = [
         Flag::Verbose,
         Flag::NoDelete,
         Flag::Secure,
