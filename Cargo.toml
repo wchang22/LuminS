@@ -1,6 +1,6 @@
 [package]
-name = "lumins"
-version = "1.2.0"
+name = "lms"
+version = "1.0.0"
 authors = ["Wesley Chang <wesleycanada@gmail.com>"]
 edition = "2018"
 

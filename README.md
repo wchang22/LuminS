@@ -15,30 +15,29 @@
     <tr><td><b>Supported on Unix platforms</b></td></tr>
     <tr><td><b>Extremely fast at synchronizing directories with large quantities of files</b></td></tr>
     <tr><td><b>Multithreaded copy, delete, and sync</b></td></tr>
-    <tr><td><b>More to Come!</b></td></tr>
 </table>
 
 <h2>Usage</h2>
 
 ```bash
 USAGE:
-    lumins [SUBCOMMAND]
+    lms [SUBCOMMAND]
 
 FLAGS:
     -h, --help       Prints help information
     -V, --version    Prints version information
 
 SUBCOMMANDS:
-    copy    Multithreaded directory copy
-    del     Multithreaded directory remove
+    copy    Multithreaded directory copy [aliases: c]
+    del     Multithreaded directory remove [aliases: d]
     help    Prints this message or the help of the given subcommand(s)
-    sync    Multithreaded directory synchronization
+    sync    Multithreaded directory synchronization [aliases: s]
 ```
 <h3>Sync</h3>
 
 ```bash
 USAGE:
-    lumins sync [FLAGS] <SOURCE> <DESTINATION>
+    lms sync [FLAGS] <SOURCE> <DESTINATION>
 
 FLAGS:
     -h, --help          Prints help information

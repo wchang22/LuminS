@@ -1,4 +1,6 @@
+use std::hash::BuildHasher;
 use std::io;
+use std::marker::{Send, Sync};
 
 use rayon::prelude::*;
 use rayon_hash::HashSet;
@@ -10,14 +12,17 @@ use crate::lumins::{file_ops, file_ops::Dir, parse::Flag};
 /// # Arguments
 /// * `src`: Source directory
 /// * `dest`: Destination directory
-/// * `flags`: set for flags
+/// * `flags`: set for Flag's
 ///
 /// # Errors
 /// This function will return an error in the following situations,
 /// but is not limited to just these cases:
 /// * `src` is an invalid directory
 /// * `dest` is an invalid directory
-pub fn synchronize(src: &str, dest: &str, flags: HashSet<Flag>) -> Result<(), io::Error> {
+pub fn synchronize<H>(src: &str, dest: &str, flags: HashSet<Flag, H>) -> Result<(), io::Error>
+where
+    H: BuildHasher + Sync + Send,
+{
     // Retrieve data from src directory about files, dirs, symlinks
     let src_file_sets = file_ops::get_all_files(&src)?;
     let src_files = src_file_sets.files();
@@ -80,14 +85,17 @@ pub fn synchronize(src: &str, dest: &str, flags: HashSet<Flag>) -> Result<(), io
 /// # Arguments
 /// * `src`: Source directory
 /// * `dest`: Destination directory
-/// * `flags`: set for flags
+/// * `flags`: set for Flag's
 ///
 /// # Errors
 /// This function will return an error in the following situations,
 /// but is not limited to just these cases:
 /// * `src` is an invalid directory
 /// * `dest` is an invalid directory
-pub fn copy(src: &str, dest: &str, flags: HashSet<Flag>) -> Result<(), io::Error> {
+pub fn copy<H>(src: &str, dest: &str, flags: HashSet<Flag, H>) -> Result<(), io::Error>
+where
+    H: BuildHasher + Sync + Send,
+{
     // Retrieve data from src directory about files, dirs, symlinks
     let src_file_sets = file_ops::get_all_files(&src)?;
     let src_files = src_file_sets.files();
@@ -112,13 +120,16 @@ pub fn copy(src: &str, dest: &str, flags: HashSet<Flag>) -> Result<(), io::Error
 ///
 /// # Arguments
 /// * `target`: Target directory
-/// * `flags`: set for flags
+/// * `flags`: set for Flag's
 ///
 /// # Errors
 /// This function will return an error in the following situations,
 /// but is not limited to just these cases:
 /// * `target` is an invalid directory
-pub fn delete(target: &str, flags: HashSet<Flag>) -> Result<(), io::Error> {
+pub fn delete<H>(target: &str, flags: HashSet<Flag, H>) -> Result<(), io::Error>
+where
+    H: BuildHasher + Sync + Send,
+{
     // Retrieve data from target directory about files, dirs, symlinks
     let target_file_sets = file_ops::get_all_files(&target)?;
     let target_files = target_file_sets.files();
@@ -137,7 +148,7 @@ pub fn delete(target: &str, flags: HashSet<Flag>) -> Result<(), io::Error> {
     // Directories must always be deleted sequentially so that they are deleted in the correct order
     let mut target_dirs: Vec<&file_ops::Dir> = file_ops::sort_files(target_dirs.into_par_iter());
 
-    // delete the target directory last
+    // Delete the target directory last
     let root_dir = Dir::from("");
     target_dirs.push(&root_dir);
 
@@ -145,6 +156,10 @@ pub fn delete(target: &str, flags: HashSet<Flag>) -> Result<(), io::Error> {
 
     Ok(())
 }
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Tests
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod test_synchronize {
@@ -323,7 +338,7 @@ mod test_copy {
 
     #[cfg(target_family = "unix")]
     #[test]
-    fn dir_1() {
+    fn dir1() {
         const TEST_DIR: &str = "test_copy_dir1";
         fs::create_dir_all(TEST_DIR).unwrap();
 
@@ -358,5 +373,52 @@ mod test_copy {
         assert_eq!(diff.status.success(), true);
 
         fs::remove_dir_all(TEST_DIR).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod test_delete {
+    use super::*;
+    use std::fs;
+    use std::process::Command;
+
+    #[test]
+    fn invalid_target() {
+        assert_eq!(delete("/?", HashSet::new()).is_err(), true);
+    }
+
+    #[cfg(target_family = "unix")]
+    #[test]
+    fn dir1() {
+        const TEST_DIR: &str = "test_delete_dir1";
+        fs::create_dir_all(TEST_DIR).unwrap();
+
+        Command::new("cp")
+            .args(&["-r", "target/debug", TEST_DIR])
+            .output()
+            .unwrap();
+
+        assert_eq!(delete(TEST_DIR, HashSet::new()).is_ok(), true);
+
+        assert_eq!(fs::read_dir(TEST_DIR).is_err(), true);
+    }
+
+    #[cfg(target_family = "unix")]
+    #[test]
+    fn flags() {
+        const TEST_DIR: &str = "test_delete_flags";
+        fs::create_dir_all(TEST_DIR).unwrap();
+
+        let mut flags = HashSet::new();
+        flags.insert(Flag::Sequential);
+
+        Command::new("cp")
+            .args(&["-r", "src", TEST_DIR])
+            .output()
+            .unwrap();
+
+        assert_eq!(delete(TEST_DIR, flags).is_ok(), true);
+
+        assert_eq!(fs::read_dir(TEST_DIR).is_err(), true);
     }
 }

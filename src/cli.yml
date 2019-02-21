@@ -1,5 +1,5 @@
 name: LuminS
-version: "1.2.0"
+version: "1.0.0"
 about: Luminous Synchronize - A fast and reliable multithreaded alternative to rsync
   for synchronizing local files
 
@@ -9,6 +9,7 @@ settings:
 subcommands:
   - copy:
       about: Multithreaded directory copy
+      visible_alias: c
       settings:
         - ArgRequiredElseHelp
       args:
@@ -30,6 +31,7 @@ subcommands:
             index: 2
   - del:
       about: Multithreaded directory remove
+      visible_alias: d
       settings:
         - ArgRequiredElseHelp
       args:
@@ -47,6 +49,7 @@ subcommands:
             index: 1
   - sync:
       about: Multithreaded directory synchronization
+      visible_alias: s
       settings:
         - ArgRequiredElseHelp
       args:

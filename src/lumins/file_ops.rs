@@ -1,8 +1,8 @@
-use std::marker::{Sync, Send};
+use std::hash::BuildHasher;
+use std::marker::{Send, Sync};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::{fs, io};
-use std::hash::BuildHasher;
 
 use blake2::{Blake2b, Digest};
 use log::info;
@@ -164,7 +164,7 @@ impl FileSets {
 /// `files_to_compare`, `src + file.path()` is the absolute path of the source file
 /// * `dest`: base directory of the files to copy to, such that for all `file` in
 /// `files_to_compare`, `dest + file.path()` is the absolute path of the destination file
-/// * `flags`: set for flags
+/// * `flags`: set for Flag's
 pub fn compare_and_copy_files<'a, T, S, H>(
     files_to_compare: T,
     src: &str,
@@ -190,7 +190,7 @@ pub fn compare_and_copy_files<'a, T, S, H>(
 /// `files_to_compare`, `src + file.path()` is the absolute path of the source file
 /// * `dest`: base directory of the files to copy to, such that for all `file` in
 /// `files_to_compare`, `dest + file.path()` is the absolute path of the destination file
-/// * `flags`: set for flags
+/// * `flags`: set for Flag's
 pub fn compare_and_copy_files_sequential<'a, T, S, H>(
     files_to_compare: T,
     src: &str,
@@ -215,9 +215,13 @@ pub fn compare_and_copy_files_sequential<'a, T, S, H>(
 /// is the absolute path of the source file
 /// * `dest`: base directory of the files to copy to, such that `dest + file.path()`
 /// is the absolute path of the destination file
-/// * `flags`: set for flags
-fn compare_and_copy_file<S, H>(file_to_compare: &S, src: &str, dest: &str, flags: Arc<HashSet<Flag, H>>)
-where
+/// * `flags`: set for Flag's
+fn compare_and_copy_file<S, H>(
+    file_to_compare: &S,
+    src: &str,
+    dest: &str,
+    flags: Arc<HashSet<Flag, H>>,
+) where
     S: FileOps,
     H: BuildHasher + Sync + Send,
 {
@@ -528,6 +532,25 @@ fn get_all_files_helper(src: &PathBuf, base: &str) -> Result<FileSets, io::Error
     }
 
     Ok(FileSets::with(files, dirs, symlinks))
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Tests
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod test_dir {
+    use super::*;
+
+    #[test]
+    fn create_dir() {
+        assert_eq!(
+            Dir::from("."),
+            Dir {
+                path: PathBuf::from("."),
+            }
+        )
+    }
 }
 
 #[cfg(test)]

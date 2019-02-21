@@ -44,9 +44,11 @@ pub struct ParseResult<'a> {
 /// * The source folder is not a valid directory
 /// * The destination folder could not be created
 pub fn parse_args<'a>(args: &'a ArgMatches) -> Result<ParseResult<'a>, ()> {
+    // These are safe to unwrap since subcommands are required
     let sub_command_name = args.subcommand_name().unwrap();
     let args = args.subcommand_matches(sub_command_name).unwrap();
 
+    // These values are safe to unwrap since the args are required
     let sub_command = match sub_command_name {
         "copy" => SubCommand {
             src: Some(args.value_of("SOURCE").unwrap()),
@@ -66,60 +68,64 @@ pub fn parse_args<'a>(args: &'a ArgMatches) -> Result<ParseResult<'a>, ()> {
         _ => return Err(()),
     };
 
-    if sub_command.sub_command_type == SubCommandType::Delete {
-        match fs::metadata(sub_command.dest) {
-            Ok(m) => {
-                if !m.is_dir() {
-                    eprintln!("Target Error: {} is not a directory", sub_command.dest);
+    // Validate directories
+    match sub_command.sub_command_type {
+        SubCommandType::Delete => {
+            // Target directory must be a valid directory
+            match fs::metadata(sub_command.dest) {
+                Ok(m) => {
+                    if !m.is_dir() {
+                        eprintln!("Target Error: {} is not a directory", sub_command.dest);
+                        return Err(());
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Target Error: {}", e);
                     return Err(());
                 }
-            }
-            Err(e) => {
-                eprintln!("Target Error: {}", e);
-                return Err(());
-            }
-        };
-    } else {
-        // Check if src is valid
-        match fs::metadata(sub_command.src.unwrap()) {
-            Ok(m) => {
-                if !m.is_dir() {
-                    eprintln!(
-                        "Source Error: {} is not a directory",
-                        sub_command.src.unwrap()
-                    );
+            };
+        }
+        SubCommandType::Copy | SubCommandType::Synchronize => {
+            // Check if src is valid
+            match fs::metadata(sub_command.src.unwrap()) {
+                Ok(m) => {
+                    if !m.is_dir() {
+                        eprintln!(
+                            "Source Error: {} is not a directory",
+                            sub_command.src.unwrap()
+                        );
+                        return Err(());
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Source Error: {}", e);
                     return Err(());
                 }
-            }
-            Err(e) => {
-                eprintln!("Source Error: {}", e);
-                return Err(());
-            }
-        };
+            };
 
-        // Create destination folder if not already existing
-        if let Err(e) = fs::create_dir_all(sub_command.dest) {
-            eprintln!("Destination Error: {}", e);
-            return Err(());
+            // Create destination folder if not already existing
+            if let Err(e) = fs::create_dir_all(sub_command.dest) {
+                eprintln!("Destination Error: {}", e);
+                return Err(());
+            }
         }
     }
 
+    static FLAG_NAMES: [&str; 5] = ["copy", "verbose", "nodelete", "secure", "sequential"];
+    static FLAGS: [Flag; 5] = [
+        Flag::Copy,
+        Flag::Verbose,
+        Flag::NoDelete,
+        Flag::Secure,
+        Flag::Sequential,
+    ];
+
     // Parse for flags
     let mut flags = HashSet::new();
-    if args.is_present("copy") {
-        flags.insert(Flag::Copy);
-    }
-    if args.is_present("verbose") {
-        flags.insert(Flag::Verbose);
-    }
-    if args.is_present("nodelete") {
-        flags.insert(Flag::NoDelete);
-    }
-    if args.is_present("secure") {
-        flags.insert(Flag::Secure);
-    }
-    if args.is_present("sequential") {
-        flags.insert(Flag::Sequential);
+    for (i, &flag_name) in FLAG_NAMES.iter().enumerate() {
+        if args.is_present(flag_name) {
+            flags.insert(FLAGS[i].clone());
+        }
     }
 
     Ok(ParseResult { sub_command, flags })
