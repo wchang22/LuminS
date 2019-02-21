@@ -7,14 +7,16 @@ use env_logger::Builder;
 use log::LevelFilter;
 
 mod lumins;
-pub use lumins::{core, file_ops, parse, parse::Flag};
+pub use lumins::parse;
+use lumins::parse::{Flag, SubCommandType};
+pub use lumins::{core, file_ops};
 
 fn main() {
     let yaml = load_yaml!("cli.yml");
     let args = App::from_yaml(yaml).get_matches();
 
-    let (src, dest, flags) = match parse::parse_args(&args) {
-        Ok(f) => (f.src, f.dest, f.flags),
+    let (sub_command, flags) = match parse::parse_args(&args) {
+        Ok(f) => (f.sub_command, f.flags),
         Err(_) => process::exit(1),
     };
 
@@ -26,10 +28,12 @@ fn main() {
             .init();
     }
 
-    let result = if flags.contains(&Flag::Copy) {
-        core::copy(src, dest, flags)
-    } else {
-        core::synchronize(src, dest, flags)
+    let result = match sub_command.sub_command_type {
+        SubCommandType::Copy => core::copy(sub_command.src.unwrap(), sub_command.dest, flags),
+        SubCommandType::Delete => core::delete(sub_command.dest, flags),
+        SubCommandType::Synchronize => {
+            core::synchronize(sub_command.src.unwrap(), sub_command.dest, flags)
+        }
     };
 
     if let Err(e) = result {
@@ -63,7 +67,7 @@ mod test_main {
             .unwrap();
 
         let output = Command::new("target/release/lumins")
-            .args(&["src"])
+            .args(&["sync", "src"])
             .output()
             .unwrap();
 
@@ -78,7 +82,7 @@ mod test_main {
             .unwrap();
 
         let output = Command::new("target/release/lumins")
-            .args(&["src", "dest", "dest"])
+            .args(&["sync", "src", "dest", "dest"])
             .output()
             .unwrap();
 
@@ -93,7 +97,7 @@ mod test_main {
             .unwrap();
 
         let output = Command::new("target/release/lumins")
-            .args(&["a", "dest"])
+            .args(&["sync", "a", "dest"])
             .output()
             .unwrap();
 
@@ -113,7 +117,7 @@ mod test_main {
         fs::create_dir_all(TEST_DEST).unwrap();
 
         Command::new("target/release/lumins")
-            .args(&["-cv", TEST_SOURCE, TEST_DEST])
+            .args(&["copy", "-v", TEST_SOURCE, TEST_DEST])
             .output()
             .unwrap();
 
@@ -140,7 +144,7 @@ mod test_main {
         fs::create_dir_all(TEST_DEST).unwrap();
 
         Command::new("target/release/lumins")
-            .args(&["-s", TEST_SOURCE, TEST_DEST])
+            .args(&["sync", "-s", TEST_SOURCE, TEST_DEST])
             .output()
             .unwrap();
 
@@ -167,7 +171,7 @@ mod test_main {
         fs::create_dir_all(TEST_DEST).unwrap();
 
         Command::new("target/release/lumins")
-            .args(&["-S", TEST_SOURCE, TEST_DEST])
+            .args(&["sync", "-S", TEST_SOURCE, TEST_DEST])
             .output()
             .unwrap();
 
@@ -194,7 +198,7 @@ mod test_main {
         fs::create_dir_all(TEST_DEST).unwrap();
 
         Command::new("target/release/lumins")
-            .args(&["-Sc", TEST_SOURCE, TEST_DEST])
+            .args(&["copy", "-S", TEST_SOURCE, TEST_DEST])
             .output()
             .unwrap();
 
@@ -234,12 +238,12 @@ mod test_main {
         fs::copy(TEST_FILE2, [TEST_EXPECTED, TEST_FILE2].join("/")).unwrap();
 
         Command::new("target/release/lumins")
-            .args(&["-c", TEST_SOURCE1, TEST_DEST])
+            .args(&["copy", TEST_SOURCE1, TEST_DEST])
             .output()
             .unwrap();
 
         Command::new("target/release/lumins")
-            .args(&["-n", TEST_SOURCE2, TEST_DEST])
+            .args(&["sync", "-n", TEST_SOURCE2, TEST_DEST])
             .output()
             .unwrap();
 

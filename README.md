@@ -14,22 +14,37 @@
     <tr><td><b>Powered by the <a href="https://github.com/rayon-rs/rayon">Rayon</a> library for high parallel perfomance</b></td></tr>
     <tr><td><b>Supported on Unix platforms</b></td></tr>
     <tr><td><b>Extremely fast at synchronizing directories with large quantities of files</b></td></tr>
+    <tr><td><b>Multithreaded copy, delete, and sync</b></td></tr>
     <tr><td><b>More to Come!</b></td></tr>
 </table>
-
 
 <h2>Usage</h2>
 
 ```bash
 USAGE:
-    lumins [FLAGS] <SOURCE> <DESTINATION>
+    lumins [SUBCOMMAND]
 
 FLAGS:
-    -c, --copy          Ignores synchronization checks and simply copies all files over
+    -h, --help       Prints help information
+    -V, --version    Prints version information
+
+SUBCOMMANDS:
+    copy    Multithreaded directory copy
+    del     Multithreaded directory remove
+    help    Prints this message or the help of the given subcommand(s)
+    sync    Multithreaded directory synchronization
+```
+<h3>Sync</h3>
+
+```bash
+USAGE:
+    lumins sync [FLAGS] <SOURCE> <DESTINATION>
+
+FLAGS:
     -h, --help          Prints help information
     -n, --nodelete      Do not delete any destination files
     -s, --secure        Use a cryptographic hash function for hashing similar files
-    -S, --sequential    Synchronize files sequentially instead of in parallel
+    -S, --sequential    Copy files sequentially instead of in parallel
     -V, --version       Prints version information
     -v, --verbose       Verbose outputs
 
@@ -47,3 +62,4 @@ $ git clone https://github.com/wchang22/LuminS.git
 $ cd LuminS
 $ cargo build --release
 ```
+

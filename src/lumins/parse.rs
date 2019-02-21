@@ -14,10 +14,24 @@ pub enum Flag {
     Sequential,
 }
 
+/// Enum to represent subcommand type
+#[derive(Eq, PartialEq, Clone)]
+pub enum SubCommandType {
+    Copy,
+    Synchronize,
+    Delete,
+}
+
+/// Struct to represent subcommands
+pub struct SubCommand<'a> {
+    pub src: Option<&'a str>,
+    pub dest: &'a str,
+    pub sub_command_type: SubCommandType,
+}
+
 /// Struct to represent the result of parsing args
 pub struct ParseResult<'a> {
-    pub src: &'a str,
-    pub dest: &'a str,
+    pub sub_command: SubCommand<'a>,
     pub flags: HashSet<Flag>,
 }
 
@@ -30,28 +44,64 @@ pub struct ParseResult<'a> {
 /// * The source folder is not a valid directory
 /// * The destination folder could not be created
 pub fn parse_args<'a>(args: &'a ArgMatches) -> Result<ParseResult<'a>, ()> {
-    // Safe to unwrap since these are required
-    let src = args.value_of("SOURCE").unwrap();
-    let dest = args.value_of("DESTINATION").unwrap();
+    let sub_command_name = args.subcommand_name().unwrap();
+    let args = args.subcommand_matches(sub_command_name).unwrap();
 
-    // Check if src is valid
-    match fs::metadata(&src) {
-        Ok(m) => {
-            if !m.is_dir() {
-                eprintln!("Source Error: {} is not a directory", &src);
-                return Err(());
-            }
-        }
-        Err(e) => {
-            eprintln!("Source Error: {}", e);
-            return Err(());
-        }
+    let sub_command = match sub_command_name {
+        "copy" => SubCommand {
+            src: Some(args.value_of("SOURCE").unwrap()),
+            dest: args.value_of("DESTINATION").unwrap(),
+            sub_command_type: SubCommandType::Copy,
+        },
+        "del" => SubCommand {
+            src: None,
+            dest: args.value_of("TARGET").unwrap(),
+            sub_command_type: SubCommandType::Delete,
+        },
+        "sync" => SubCommand {
+            src: Some(args.value_of("SOURCE").unwrap()),
+            dest: args.value_of("DESTINATION").unwrap(),
+            sub_command_type: SubCommandType::Synchronize,
+        },
+        _ => return Err(()),
     };
 
-    // Create destination folder if not already existing
-    if let Err(e) = fs::create_dir_all(&dest) {
-        eprintln!("Destination Error: {}", e);
-        return Err(());
+    if sub_command.sub_command_type == SubCommandType::Delete {
+        match fs::metadata(sub_command.dest) {
+            Ok(m) => {
+                if !m.is_dir() {
+                    eprintln!("Target Error: {} is not a directory", sub_command.dest);
+                    return Err(());
+                }
+            }
+            Err(e) => {
+                eprintln!("Target Error: {}", e);
+                return Err(());
+            }
+        };
+    } else {
+        // Check if src is valid
+        match fs::metadata(sub_command.src.unwrap()) {
+            Ok(m) => {
+                if !m.is_dir() {
+                    eprintln!(
+                        "Source Error: {} is not a directory",
+                        sub_command.src.unwrap()
+                    );
+                    return Err(());
+                }
+            }
+            Err(e) => {
+                eprintln!("Source Error: {}", e);
+                return Err(());
+            }
+        };
+
+        // Create destination folder if not already existing
+        if let Err(e) = fs::create_dir_all(sub_command.dest) {
+            eprintln!("Destination Error: {}", e);
+            return Err(());
+        }
     }
 
     // Parse for flags
@@ -72,5 +122,5 @@ pub fn parse_args<'a>(args: &'a ArgMatches) -> Result<ParseResult<'a>, ()> {
         flags.insert(Flag::Sequential);
     }
 
-    Ok(ParseResult { src, dest, flags })
+    Ok(ParseResult { sub_command, flags })
 }

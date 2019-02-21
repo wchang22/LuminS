@@ -3,7 +3,7 @@ use std::io;
 use rayon::prelude::*;
 use rayon_hash::HashSet;
 
-use crate::lumins::{file_ops, parse::Flag};
+use crate::lumins::{file_ops, file_ops::Dir, parse::Flag};
 
 /// Synchronizes all files, directories, and symlinks in `dest` with `src`
 ///
@@ -43,29 +43,26 @@ pub fn synchronize(src: &str, dest: &str, flags: HashSet<Flag>) -> Result<(), io
     }
 
     // Determine whether or not to run sequentially
-    match flags.contains(&Flag::Sequential) {
-        true => {
-            let dirs_to_copy = src_dirs.difference(&dest_dirs);
-            let symlinks_to_copy = src_symlinks.difference(&dest_symlinks);
-            let files_to_copy = src_files.difference(&dest_files);
-            let files_to_compare = src_files.intersection(&dest_files);
+    if flags.contains(&Flag::Sequential) {
+        let dirs_to_copy = src_dirs.difference(&dest_dirs);
+        let symlinks_to_copy = src_symlinks.difference(&dest_symlinks);
+        let files_to_copy = src_files.difference(&dest_files);
+        let files_to_compare = src_files.intersection(&dest_files);
 
-            file_ops::copy_files_sequential(dirs_to_copy, &src, &dest);
-            file_ops::copy_files_sequential(symlinks_to_copy, &src, &dest);
-            file_ops::copy_files_sequential(files_to_copy, &src, &dest);
-            file_ops::compare_and_copy_files_sequential(files_to_compare, &src, &dest, flags);
-        }
-        false => {
-            let dirs_to_copy = src_dirs.par_difference(&dest_dirs);
-            let symlinks_to_copy = src_symlinks.par_difference(&dest_symlinks);
-            let files_to_copy = src_files.par_difference(&dest_files);
-            let files_to_compare = src_files.par_intersection(&dest_files);
+        file_ops::copy_files_sequential(dirs_to_copy, &src, &dest);
+        file_ops::copy_files_sequential(symlinks_to_copy, &src, &dest);
+        file_ops::copy_files_sequential(files_to_copy, &src, &dest);
+        file_ops::compare_and_copy_files_sequential(files_to_compare, &src, &dest, flags);
+    } else {
+        let dirs_to_copy = src_dirs.par_difference(&dest_dirs);
+        let symlinks_to_copy = src_symlinks.par_difference(&dest_symlinks);
+        let files_to_copy = src_files.par_difference(&dest_files);
+        let files_to_compare = src_files.par_intersection(&dest_files);
 
-            file_ops::copy_files(dirs_to_copy, &src, &dest);
-            file_ops::copy_files(symlinks_to_copy, &src, &dest);
-            file_ops::copy_files(files_to_copy, &src, &dest);
-            file_ops::compare_and_copy_files(files_to_compare, &src, &dest, flags);
-        }
+        file_ops::copy_files(dirs_to_copy, &src, &dest);
+        file_ops::copy_files(symlinks_to_copy, &src, &dest);
+        file_ops::copy_files(files_to_copy, &src, &dest);
+        file_ops::compare_and_copy_files(files_to_compare, &src, &dest, flags);
     }
 
     // Delete dirs in the correct order
@@ -83,6 +80,7 @@ pub fn synchronize(src: &str, dest: &str, flags: HashSet<Flag>) -> Result<(), io
 /// # Arguments
 /// * `src`: Source directory
 /// * `dest`: Destination directory
+/// * `flags`: set for flags
 ///
 /// # Errors
 /// This function will return an error in the following situations,
@@ -106,6 +104,44 @@ pub fn copy(src: &str, dest: &str, flags: HashSet<Flag>) -> Result<(), io::Error
         file_ops::copy_files(src_files.into_par_iter(), &src, &dest);
         file_ops::copy_files(src_symlinks.into_par_iter(), &src, &dest);
     }
+
+    Ok(())
+}
+
+/// Deletes directory `target`
+///
+/// # Arguments
+/// * `target`: Target directory
+/// * `flags`: set for flags
+///
+/// # Errors
+/// This function will return an error in the following situations,
+/// but is not limited to just these cases:
+/// * `target` is an invalid directory
+pub fn delete(target: &str, flags: HashSet<Flag>) -> Result<(), io::Error> {
+    // Retrieve data from target directory about files, dirs, symlinks
+    let target_file_sets = file_ops::get_all_files(&target)?;
+    let target_files = target_file_sets.files();
+    let target_dirs = target_file_sets.dirs();
+    let target_symlinks = target_file_sets.symlinks();
+
+    // Delete everything
+    if flags.contains(&Flag::Sequential) {
+        file_ops::delete_files_sequential(target_files.into_iter(), &target);
+        file_ops::delete_files_sequential(target_symlinks.into_iter(), &target);
+    } else {
+        file_ops::delete_files(target_files.into_par_iter(), &target);
+        file_ops::delete_files(target_symlinks.into_par_iter(), &target);
+    }
+
+    // Directories must always be deleted sequentially so that they are deleted in the correct order
+    let mut target_dirs: Vec<&file_ops::Dir> = file_ops::sort_files(target_dirs.into_par_iter());
+
+    // delete the target directory last
+    let root_dir = Dir::from("");
+    target_dirs.push(&root_dir);
+
+    file_ops::delete_files_sequential(target_dirs.into_iter(), &target);
 
     Ok(())
 }
