@@ -25,12 +25,13 @@ USAGE:
     lumins [FLAGS] <SOURCE> <DESTINATION>
 
 FLAGS:
-    -c, --copy        Ignores synchronization checks and simply copies all files over
-    -h, --help        Prints help information
-    -n, --nodelete    Do not delete any destination files
-    -s, --secure      Use a cryptographic hash function for hashing similar files
-    -V, --version     Prints version information
-    -v, --verbose     Verbose outputs
+    -c, --copy          Ignores synchronization checks and simply copies all files over
+    -h, --help          Prints help information
+    -n, --nodelete      Do not delete any destination files
+    -s, --secure        Use a cryptographic hash function for hashing similar files
+    -S, --sequential    Synchronize files sequentially instead of in parallel
+    -V, --version       Prints version information
+    -v, --verbose       Verbose outputs
 
 ARGS:
     <SOURCE>         Source directory

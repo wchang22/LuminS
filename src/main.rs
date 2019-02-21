@@ -1,6 +1,3 @@
-#[macro_use]
-extern crate log;
-
 use std::env;
 use std::io::Write;
 use std::process;
@@ -10,7 +7,7 @@ use env_logger::Builder;
 use log::LevelFilter;
 
 mod lumins;
-pub use lumins::{core, file_ops, parse};
+pub use lumins::{core, file_ops, parse, parse::Flag};
 
 fn main() {
     let yaml = load_yaml!("cli.yml");
@@ -21,9 +18,7 @@ fn main() {
         Err(_) => process::exit(1),
     };
 
-    let result;
-
-    if parse::contains_flag(flags, parse::Flag::Verbose) {
+    if flags.contains(&Flag::Verbose) {
         env::set_var("RUST_LOG", "info");
         Builder::new()
             .format(|buf, record| writeln!(buf, "{}", record.args()))
@@ -31,28 +26,29 @@ fn main() {
             .init();
     }
 
-    if parse::contains_flag(flags, parse::Flag::Copy) {
-        result = core::copy(src, dest);
+    let result = if flags.contains(&Flag::Copy) {
+        core::copy(src, dest, flags)
     } else {
-        result = core::synchronize(src, dest, flags);
-    }
+        core::synchronize(src, dest, flags)
+    };
 
-    if result.is_err() {
-        eprintln!("{}", result.err().unwrap());
+    if let Err(e) = result {
+        eprintln!("{}", e);
         process::exit(1);
     }
 }
 
 #[cfg(test)]
 mod test_main {
-    use std::process::Command;
     use std::fs;
+    use std::process::Command;
 
     #[test]
     fn test_no_args() {
         Command::new("cargo")
             .args(&["build", "--release"])
-            .output().unwrap();
+            .output()
+            .unwrap();
 
         let output = Command::new("target/release/lumins").output().unwrap();
 
@@ -63,7 +59,8 @@ mod test_main {
     fn test_no_dest() {
         Command::new("cargo")
             .args(&["build", "--release"])
-            .output().unwrap();
+            .output()
+            .unwrap();
 
         let output = Command::new("target/release/lumins")
             .args(&["src"])
@@ -77,7 +74,8 @@ mod test_main {
     fn test_too_many_args() {
         Command::new("cargo")
             .args(&["build", "--release"])
-            .output().unwrap();
+            .output()
+            .unwrap();
 
         let output = Command::new("target/release/lumins")
             .args(&["src", "dest", "dest"])
@@ -91,7 +89,8 @@ mod test_main {
     fn test_invalid_args() {
         Command::new("cargo")
             .args(&["build", "--release"])
-            .output().unwrap();
+            .output()
+            .unwrap();
 
         let output = Command::new("target/release/lumins")
             .args(&["a", "dest"])
@@ -106,7 +105,8 @@ mod test_main {
     fn test_copy() {
         Command::new("cargo")
             .args(&["build", "--release"])
-            .output().unwrap();
+            .output()
+            .unwrap();
 
         const TEST_SOURCE: &str = "target/debug";
         const TEST_DEST: &str = "test_main_test_copy";
@@ -132,7 +132,8 @@ mod test_main {
     fn test_secure() {
         Command::new("cargo")
             .args(&["build", "--release"])
-            .output().unwrap();
+            .output()
+            .unwrap();
 
         const TEST_SOURCE: &str = "target/debug";
         const TEST_DEST: &str = "test_main_test_secure";
@@ -155,10 +156,65 @@ mod test_main {
 
     #[cfg(target_family = "unix")]
     #[test]
+    fn test_sequential() {
+        Command::new("cargo")
+            .args(&["build", "--release"])
+            .output()
+            .unwrap();
+
+        const TEST_SOURCE: &str = "target/debug";
+        const TEST_DEST: &str = "test_main_test_sequential";
+        fs::create_dir_all(TEST_DEST).unwrap();
+
+        Command::new("target/release/lumins")
+            .args(&["-S", TEST_SOURCE, TEST_DEST])
+            .output()
+            .unwrap();
+
+        let diff = Command::new("diff")
+            .args(&["-r", TEST_SOURCE, TEST_DEST])
+            .output()
+            .unwrap();
+
+        assert_eq!(diff.status.success(), true);
+
+        fs::remove_dir_all(TEST_DEST).unwrap();
+    }
+
+    #[cfg(target_family = "unix")]
+    #[test]
+    fn test_sequential_copy() {
+        Command::new("cargo")
+            .args(&["build", "--release"])
+            .output()
+            .unwrap();
+
+        const TEST_SOURCE: &str = "target/debug";
+        const TEST_DEST: &str = "test_main_test_sequential_copy";
+        fs::create_dir_all(TEST_DEST).unwrap();
+
+        Command::new("target/release/lumins")
+            .args(&["-Sc", TEST_SOURCE, TEST_DEST])
+            .output()
+            .unwrap();
+
+        let diff = Command::new("diff")
+            .args(&["-r", TEST_SOURCE, TEST_DEST])
+            .output()
+            .unwrap();
+
+        assert_eq!(diff.status.success(), true);
+
+        fs::remove_dir_all(TEST_DEST).unwrap();
+    }
+
+    #[cfg(target_family = "unix")]
+    #[test]
     fn test_no_delete() {
         Command::new("cargo")
             .args(&["build", "--release"])
-            .output().unwrap();
+            .output()
+            .unwrap();
 
         const TEST_SOURCE1: &str = "test_main_test_no_delete_source1";
         const TEST_SOURCE2: &str = "test_main_test_no_delete_source2";
