@@ -5,12 +5,14 @@ about: Luminous Synchronize - A fast and reliable multithreaded alternative to r
 
 settings:
   - ArgRequiredElseHelp
+  - ColoredHelp
 
 subcommands:
   - cp:
       about: Multithreaded directory copy
       settings:
         - ArgRequiredElseHelp
+        - ColoredHelp
       args:
         - verbose:
             short: v
@@ -32,6 +34,7 @@ subcommands:
       about: Multithreaded directory remove
       settings:
         - ArgRequiredElseHelp
+        - ColoredHelp
       args:
         - verbose:
             short: v
@@ -50,6 +53,7 @@ subcommands:
       visible_alias: s
       settings:
         - ArgRequiredElseHelp
+        - ColoredHelp
       args:
         - nodelete:
             short: n
