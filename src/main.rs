@@ -6,8 +6,8 @@ use clap::{load_yaml, App};
 use env_logger::Builder;
 use log::LevelFilter;
 
-use lms::parse::{self, Flag, SubCommandType};
 use lms::core;
+use lms::parse::{self, Flag, SubCommandType};
 
 fn main() {
     // Parse command args
@@ -31,10 +31,10 @@ fn main() {
 
     // Call correct core function depending on subcommand
     let result = match sub_command.sub_command_type {
-        SubCommandType::Copy => core::copy(sub_command.src.unwrap(), sub_command.dest, flags),
-        SubCommandType::Remove => core::remove(sub_command.dest, flags),
+        SubCommandType::Copy => core::copy(sub_command.src.unwrap(), &sub_command.dest, flags),
+        SubCommandType::Remove => core::remove(&sub_command.dest, flags),
         SubCommandType::Synchronize => {
-            core::synchronize(sub_command.src.unwrap(), sub_command.dest, flags)
+            core::synchronize(sub_command.src.unwrap(), &sub_command.dest, flags)
         }
     };
 
@@ -121,7 +121,6 @@ mod test_main {
 
         const TEST_SOURCE: &str = "target/debug";
         const TEST_DEST: &str = "test_main_test_copy";
-        fs::create_dir_all(TEST_DEST).unwrap();
 
         Command::new("target/release/lms")
             .args(&["cp", "-v", TEST_SOURCE, TEST_DEST])
@@ -175,7 +174,6 @@ mod test_main {
 
         const TEST_SOURCE: &str = "target/debug";
         const TEST_DEST: &str = "test_main_test_sequential";
-        fs::create_dir_all(TEST_DEST).unwrap();
 
         Command::new("target/release/lms")
             .args(&["sync", "-S", TEST_SOURCE, TEST_DEST])
@@ -202,7 +200,6 @@ mod test_main {
 
         const TEST_SOURCE: &str = "target/debug";
         const TEST_DEST: &str = "test_main_test_sequential_copy";
-        fs::create_dir_all(TEST_DEST).unwrap();
 
         Command::new("target/release/lms")
             .args(&["cp", "-S", TEST_SOURCE, TEST_DEST])
@@ -236,7 +233,6 @@ mod test_main {
 
         fs::create_dir_all(TEST_SOURCE1).unwrap();
         fs::create_dir_all(TEST_SOURCE2).unwrap();
-        fs::create_dir_all(TEST_DEST).unwrap();
         fs::create_dir_all(TEST_EXPECTED).unwrap();
 
         fs::copy(TEST_FILE1, [TEST_SOURCE1, TEST_FILE1].join("/")).unwrap();

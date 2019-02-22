@@ -41,7 +41,7 @@ impl FileOps for File {
     }
     fn copy(&self, src: &PathBuf, dest: &PathBuf) {
         match fs::copy(&src, &dest) {
-            Ok(_) => info!("Copying file {:?}", src),
+            Ok(_) => info!("Copying file {:?} -> {:?}", src, dest),
             Err(e) => eprintln!("Error -- Copying file {:?}: {}", src, e),
         }
     }
@@ -101,7 +101,7 @@ impl FileOps for Symlink {
         use std::os::unix::fs;
 
         match fs::symlink(&self.target, &dest) {
-            Ok(_) => info!("Creating symlink {:?}", dest),
+            Ok(_) => info!("Creating symlink {:?} -> {:?}", dest, self.target),
             Err(e) => eprintln!("Error -- Creating symlink {:?}: {}", dest, e),
         }
     }
