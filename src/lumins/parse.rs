@@ -131,16 +131,18 @@ pub fn parse_args<'a>(args: &'a ArgMatches) -> Result<ParseResult<'a>, ()> {
                 }
             }
 
-            // Create destination folder if not already existing
-            match fs::create_dir_all(&sub_command.dest) {
-                Ok(_) => {
-                    if flags.contains(&Flag::Verbose) {
-                        println!("Creating dir {:?}", sub_command.dest);
+            if fs::metadata(&sub_command.dest).is_err() {
+                // Create destination folder if not already existing
+                match fs::create_dir_all(&sub_command.dest) {
+                    Ok(_) => {
+                        if flags.contains(&Flag::Verbose) {
+                            println!("Creating dir {:?}", sub_command.dest);
+                        }
                     }
-                }
-                Err(e) => {
-                    eprintln!("Destination Error: {}", e);
-                    return Err(());
+                    Err(e) => {
+                        eprintln!("Destination Error: {}", e);
+                        return Err(());
+                    }
                 }
             }
         }
