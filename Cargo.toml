@@ -3,6 +3,8 @@ name = "lms"
 version = "0.1.0"
 authors = ["Wesley Chang <wesleycanada@gmail.com>"]
 edition = "2018"
+license = "MIT"
+description = "A fast and reliable alternative to rsync for synchronizing local files"
 
 [dependencies]
 rayon = "1.0.3"

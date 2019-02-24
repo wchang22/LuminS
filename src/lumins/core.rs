@@ -1,3 +1,5 @@
+//! Contains core copy, remove, synchronize functions
+
 use std::hash::BuildHasher;
 use std::io;
 use std::marker::{Send, Sync};

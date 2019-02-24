@@ -1,3 +1,5 @@
+//! Some utilities for command line parsing.
+
 use std::fs;
 use std::path::PathBuf;
 

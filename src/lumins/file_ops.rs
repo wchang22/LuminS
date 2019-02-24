@@ -1,3 +1,5 @@
+//! Contains utilities for copying, deleting, sorting, hashing files.
+
 use std::hash::BuildHasher;
 use std::marker::{Send, Sync};
 use std::path::PathBuf;
@@ -43,6 +45,15 @@ impl FileOps for File {
         match fs::copy(&src, &dest) {
             Ok(_) => info!("Copying file {:?} -> {:?}", src, dest),
             Err(e) => eprintln!("Error -- Copying file {:?}: {}", src, e),
+        }
+    }
+}
+
+impl File {
+    pub fn from(path: &str, size: u64) -> Self {
+        File {
+            path: PathBuf::from(path),
+            size,
         }
     }
 }
@@ -103,6 +114,15 @@ impl FileOps for Symlink {
         match fs::symlink(&self.target, &dest) {
             Ok(_) => info!("Creating symlink {:?} -> {:?}", dest, self.target),
             Err(e) => eprintln!("Error -- Creating symlink {:?}: {}", dest, e),
+        }
+    }
+}
+
+impl Symlink {
+    pub fn from(path: &str, target: &str) -> Self {
+        Symlink {
+            path: PathBuf::from(path),
+            target: PathBuf::from(target),
         }
     }
 }
@@ -539,7 +559,7 @@ fn get_all_files_helper(src: &PathBuf, base: &str) -> Result<FileSets, io::Error
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
-mod test_dir {
+mod test_file_ops {
     use super::*;
 
     #[test]
@@ -548,6 +568,28 @@ mod test_dir {
             Dir::from("."),
             Dir {
                 path: PathBuf::from("."),
+            }
+        )
+    }
+
+    #[test]
+    fn create_file() {
+        assert_eq!(
+            File::from(".", 10),
+            File {
+                path: PathBuf::from("."),
+                size: 10,
+            }
+        )
+    }
+
+    #[test]
+    fn create_symlink() {
+        assert_eq!(
+            Symlink::from(".", "file"),
+            Symlink {
+                path: PathBuf::from("."),
+                target: PathBuf::from("file"),
             }
         )
     }
