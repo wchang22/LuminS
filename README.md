@@ -6,6 +6,7 @@
 <img src="https://travis-ci.org/wchang22/LuminS.svg?branch=master" alt="Build Status" />
   <img src="https://codecov.io/gh/wchang22/LuminS/branch/master/graph/badge.svg" alt="Code Coverage" />
 </p>
+
 ### Crate
 
 [crates.io: lms](https://crates.io/crates/lms)
