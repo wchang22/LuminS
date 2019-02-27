@@ -1,6 +1,6 @@
 [package]
 name = "lms"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Wesley Chang <wesleycanada@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -8,7 +8,7 @@ description = "A fast and reliable alternative to rsync for synchronizing local 
 
 repository = "https://github.com/wchang22/lumins"
 readme = "./README.md"
-keywords = ["rsync", "LuminS", "filesystem", "command-line", "sync"]
+keywords = ["rsync", "linux", "file", "cli", "sync"]
 categories = ["command-line-utilities", "filesystem", ]
 
 [badges]
