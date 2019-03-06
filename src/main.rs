@@ -31,10 +31,12 @@ fn main() {
 
     // Call correct core function depending on subcommand
     let result = match sub_command.sub_command_type {
-        SubCommandType::Copy => core::copy(sub_command.src.unwrap(), &sub_command.dest, flags),
-        SubCommandType::Remove => core::remove(&sub_command.dest, flags),
+        SubCommandType::Copy => core::copy(sub_command.src.unwrap(), &sub_command.dest[0], flags),
+        SubCommandType::Remove => sub_command.dest.iter().map(|dest| {
+            core::remove(dest, flags.clone())
+        }).collect(),
         SubCommandType::Synchronize => {
-            core::synchronize(sub_command.src.unwrap(), &sub_command.dest, flags)
+            core::synchronize(sub_command.src.unwrap(), &sub_command.dest[0], flags)
         }
     };
 
@@ -286,6 +288,38 @@ mod test_main {
             .unwrap();
 
         assert_eq!(fs::read_dir(TEST_DEST).is_err(), true);
+    }
+
+    #[cfg(target_family = "unix")]
+    #[test]
+    fn test_remove_multiple() {
+        Command::new("cargo")
+            .args(&["build", "--release"])
+            .output()
+            .unwrap();
+
+        const TEST_SOURCE: &str = "target/debug";
+        const TEST_DEST: [&str; 2] = ["test_main_test_remove1", "test_main_test_remove2"];
+        fs::create_dir_all(TEST_DEST[0]).unwrap();
+        fs::create_dir_all(TEST_DEST[1]).unwrap();
+
+        Command::new("cp")
+            .args(&["-r", TEST_SOURCE, TEST_DEST[0]])
+            .output()
+            .unwrap();
+
+        Command::new("cp")
+            .args(&["-r", TEST_SOURCE, TEST_DEST[1]])
+            .output()
+            .unwrap();
+
+        Command::new("target/release/lms")
+            .args(&["rm", TEST_DEST[0], TEST_DEST[1]])
+            .output()
+            .unwrap();
+
+        assert_eq!(fs::read_dir(TEST_DEST[0]).is_err(), true);
+        assert_eq!(fs::read_dir(TEST_DEST[1]).is_err(), true);
     }
 
     #[cfg(target_family = "unix")]

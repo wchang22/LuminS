@@ -81,7 +81,7 @@ ARGS:
 
 ```bash
 USAGE:
-    lms rm [FLAGS] <TARGET>
+    lms rm [FLAGS] <TARGET>...
 
 FLAGS:
     -h, --help          Prints help information
