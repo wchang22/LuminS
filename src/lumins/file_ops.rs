@@ -384,8 +384,6 @@ where
     T: ParallelIterator<Item = &'a S>,
     S: FileOps + Sync + 'a,
 {
-    let a = vec!['a'];
-    a.par_iter();
     let mut files_to_sort = Vec::from_par_iter(files_to_sort);
     files_to_sort.par_sort_unstable_by(|a, b| {
         b.path()
@@ -415,7 +413,7 @@ where
         .collect();
 
     match fs::read(file) {
-        Ok(contents) => Some(seahash::hash(contents.as_slice())),
+        Ok(contents) => Some(seahash::hash(&contents)),
         Err(_) => None,
     }
 }
