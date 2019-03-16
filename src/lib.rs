@@ -29,6 +29,7 @@ lazy_static! {
             ProgressStyle::default_bar()
                 .template("[{elapsed_precise}] [{bar:40.green/white}] {pos}/{len} ({eta})"),
         );
+        pb.set_draw_delta(10);
         pb
     };
 }

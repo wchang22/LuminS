@@ -50,7 +50,7 @@ fn main() {
 
     // If error, print to stderr and exit
     if let Err(e) = result {
-        error!("{}", e);
+        eprintln!("{}", e);
         process::exit(1);
     }
 }
