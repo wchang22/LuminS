@@ -75,7 +75,11 @@ pub fn parse_args<'a>(args: &'a ArgMatches) -> Result<ParseResult<'a>, ()> {
         },
         "rm" => SubCommand {
             src: None,
-            dest: args.values_of("TARGET").unwrap().map(|value| value.to_string()).collect(),
+            dest: args
+                .values_of("TARGET")
+                .unwrap()
+                .map(|value| value.to_string())
+                .collect(),
             sub_command_type: SubCommandType::Remove,
         },
         "sync" => SubCommand {

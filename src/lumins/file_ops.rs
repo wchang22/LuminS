@@ -7,12 +7,13 @@ use std::sync::Arc;
 use std::{fs, io};
 
 use blake2::{Blake2b, Digest};
-use log::info;
+use log::{error, info};
 use rayon::prelude::*;
 use rayon_hash::HashSet;
 use seahash;
 
 use crate::lumins::parse::Flag;
+use crate::PROGRESS_BAR;
 
 /// Interface for all file structs to perform common operations
 ///
@@ -38,13 +39,13 @@ impl FileOps for File {
     fn remove(&self, path: &PathBuf) {
         match fs::remove_file(&path) {
             Ok(_) => info!("Deleting file {:?}", path),
-            Err(e) => eprintln!("Error -- Deleting file {:?}: {}", path, e),
+            Err(e) => error!("Error -- Deleting file {:?}: {}", path, e),
         }
     }
     fn copy(&self, src: &PathBuf, dest: &PathBuf) {
         match fs::copy(&src, &dest) {
             Ok(_) => info!("Copying file {:?} -> {:?}", src, dest),
-            Err(e) => eprintln!("Error -- Copying file {:?}: {}", src, e),
+            Err(e) => error!("Error -- Copying file {:?}: {}", src, e),
         }
     }
 }
@@ -71,13 +72,13 @@ impl FileOps for Dir {
     fn remove(&self, path: &PathBuf) {
         match fs::remove_dir(&path) {
             Ok(_) => info!("Deleting dir {:?}", path),
-            Err(e) => eprintln!("Error -- Deleting dir {:?}: {}", path, e),
+            Err(e) => error!("Error -- Deleting dir {:?}: {}", path, e),
         }
     }
     fn copy(&self, _src: &PathBuf, dest: &PathBuf) {
         match fs::create_dir_all(&dest) {
             Ok(_) => info!("Creating dir {:?}", dest),
-            Err(e) => eprintln!("Error -- Creating dir {:?}: {}", dest, e),
+            Err(e) => error!("Error -- Creating dir {:?}: {}", dest, e),
         }
     }
 }
@@ -104,7 +105,7 @@ impl FileOps for Symlink {
     fn remove(&self, path: &PathBuf) {
         match fs::remove_file(&path) {
             Ok(_) => info!("Deleting symlink {:?}", path),
-            Err(e) => eprintln!("Error -- Deleting symlink {:?}: {}", path, e),
+            Err(e) => error!("Error -- Deleting symlink {:?}: {}", path, e),
         }
     }
     #[cfg(target_family = "unix")]
@@ -113,7 +114,7 @@ impl FileOps for Symlink {
 
         match fs::symlink(&self.target, &dest) {
             Ok(_) => info!("Creating symlink {:?} -> {:?}", dest, self.target),
-            Err(e) => eprintln!("Error -- Creating symlink {:?}: {}", dest, e),
+            Err(e) => error!("Error -- Creating symlink {:?}: {}", dest, e),
         }
     }
 }
@@ -198,6 +199,7 @@ pub fn compare_and_copy_files<'a, T, S, H>(
     let flags = Arc::new(flags);
     files_to_compare.for_each(|file| {
         compare_and_copy_file(file, src, dest, Arc::clone(&flags));
+        PROGRESS_BAR.inc(2);
     });
 }
 
@@ -224,6 +226,7 @@ pub fn compare_and_copy_files_sequential<'a, T, S, H>(
     let flags = Arc::new(flags);
     for file in files_to_compare {
         compare_and_copy_file(file, src, dest, Arc::clone(&flags));
+        PROGRESS_BAR.inc(2);
     }
 }
 
@@ -289,6 +292,7 @@ where
 {
     files_to_copy.for_each(|file| {
         copy_file(file, &src, &dest);
+        PROGRESS_BAR.inc(1);
     });
 }
 
@@ -307,6 +311,7 @@ where
 {
     for file in files_to_copy {
         copy_file(file, &src, &dest);
+        PROGRESS_BAR.inc(1);
     }
 }
 
@@ -346,6 +351,7 @@ where
     files_to_delete.for_each(|file| {
         let path = [&PathBuf::from(&location), file.path()].iter().collect();
         file.remove(&path);
+        PROGRESS_BAR.inc(1);
     });
 }
 
@@ -365,6 +371,7 @@ where
     for file in files_to_delete {
         let path = [&PathBuf::from(&location), file.path()].iter().collect();
         file.remove(&path);
+        PROGRESS_BAR.inc(1);
     }
 }
 
@@ -443,13 +450,13 @@ where
             match io::copy(file, &mut hasher) {
                 Ok(_) => Some(hasher.result().to_vec()),
                 Err(e) => {
-                    eprintln!("Error -- Hashing: {:?}: {}", file_to_hash.path(), e);
+                    error!("Error -- Hashing: {:?}: {}", file_to_hash.path(), e);
                     None
                 }
             }
         }
         Err(e) => {
-            eprintln!("Error -- Opening File: {:?}: {}", file_to_hash.path(), e);
+            error!("Error -- Opening File: {:?}: {}", file_to_hash.path(), e);
             None
         }
     }
@@ -486,7 +493,7 @@ fn get_all_files_helper(src: &PathBuf, base: &str) -> Result<FileSets, io::Error
 
     for file in dir {
         if file.is_err() {
-            eprintln!("{}", file.err().unwrap());
+            error!("{}", file.err().unwrap());
             continue;
         }
 
@@ -494,7 +501,7 @@ fn get_all_files_helper(src: &PathBuf, base: &str) -> Result<FileSets, io::Error
         let metadata = file.metadata();
 
         if metadata.is_err() {
-            eprintln!(
+            error!(
                 "Error -- Reading metadata of {:?} {}",
                 file.path(),
                 metadata.err().unwrap()
@@ -523,7 +530,7 @@ fn get_all_files_helper(src: &PathBuf, base: &str) -> Result<FileSets, io::Error
                     symlinks.extend(file_sets.symlinks);
                 }
                 Err(e) => {
-                    eprintln!("Error - Retrieving files: {}", e);
+                    error!("Error - Retrieving files: {}", e);
                     continue;
                 }
             }
@@ -542,7 +549,7 @@ fn get_all_files_helper(src: &PathBuf, base: &str) -> Result<FileSets, io::Error
                     });
                 }
                 Err(e) => {
-                    eprintln!("Error - Reading symlink: {}", e);
+                    error!("Error - Reading symlink: {}", e);
                     continue;
                 }
             }
