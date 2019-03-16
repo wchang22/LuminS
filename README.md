@@ -3,17 +3,14 @@
 <h4 align="center">A fast and reliable alternative to rsync for synchronizing local files</h4>
 
 <p align="center">
-<img src="https://travis-ci.org/wchang22/LuminS.svg?branch=master" alt="Build Status" />
-  <img src="https://codecov.io/gh/wchang22/LuminS/branch/master/graph/badge.svg" alt="Code Coverage" />
+  <a href="https://travis-ci.org/wchang22/LuminS"><img src="https://travis-ci.org/wchang22/LuminS.svg?branch=master" alt="Build Status" /></a>
+  <a href="https://codecov.io/gh/wchang22/LuminS"><img src="https://codecov.io/gh/wchang22/LuminS/branch/master/graph/badge.svg" alt="Code Coverage" /></a>
+  <a href="https://crates.io/crates/lms"><img src="http://meritbadge.herokuapp.com/lms" alt="Crate" /></a>
+  <a href="https://docs.rs/lms"><img src="https://docs.rs/lms/badge.svg" alt="Docs" /></a>
 </p>
-
-### Crate
-
-[crates.io: lms](https://crates.io/crates/lms)
-
-### Documentation
-
-[docs.rs: lms](https://docs.rs/lms)
+<p align="center">
+  <img src="examples/lumins.gif" alt="Demo"    
+</p>
 
 ## Features
 

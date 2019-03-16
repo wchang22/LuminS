@@ -8,6 +8,7 @@ use rayon::prelude::*;
 use rayon_hash::HashSet;
 
 use crate::lumins::{file_ops, file_ops::Dir, parse::Flag};
+use crate::PROGRESS_BAR;
 
 /// Synchronizes all files, directories, and symlinks in `dest` with `src`
 ///
@@ -36,6 +37,17 @@ where
     let dest_files = dest_file_sets.files();
     let dest_dirs = dest_file_sets.dirs();
     let dest_symlinks = dest_file_sets.symlinks();
+
+    // Set progress length and reset to 0
+    PROGRESS_BAR.set_length(
+        (src_files.len()
+            + src_dirs.len()
+            + src_symlinks.len()
+            + dest_files.len()
+            + dest_dirs.len()
+            + dest_symlinks.len()) as u64,
+    );
+    PROGRESS_BAR.set_position(0);
 
     // Determine whether or not to delete
     let delete = !flags.contains(&Flag::NoDelete);
@@ -104,6 +116,10 @@ where
     let src_dirs = src_file_sets.dirs();
     let src_symlinks = src_file_sets.symlinks();
 
+    // Set progress length and reset to 0
+    PROGRESS_BAR.set_length((src_files.len() + src_dirs.len() + src_symlinks.len()) as u64);
+    PROGRESS_BAR.set_position(0);
+
     // Copy everything
     if flags.contains(&Flag::Sequential) {
         file_ops::copy_files_sequential(src_dirs.into_iter(), &src, &dest);
@@ -137,6 +153,11 @@ where
     let target_files = target_file_sets.files();
     let target_dirs = target_file_sets.dirs();
     let target_symlinks = target_file_sets.symlinks();
+
+    // Set progress length and reset to 0
+    PROGRESS_BAR
+        .set_length((target_files.len() + target_dirs.len() + target_symlinks.len()) as u64);
+    PROGRESS_BAR.set_position(0);
 
     // Delete everything
     if flags.contains(&Flag::Sequential) {
