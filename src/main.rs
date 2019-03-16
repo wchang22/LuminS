@@ -3,7 +3,7 @@ use std::process;
 
 use clap::{load_yaml, App};
 use env_logger::Builder;
-use log::{error, LevelFilter};
+use log::LevelFilter;
 
 use lms::core;
 use lms::parse::{self, Flag, SubCommandType};
@@ -20,7 +20,7 @@ fn main() {
         Err(_) => process::exit(1),
     };
 
-    // If verbose, enable logging
+    // If verbose, enable info logging
     if flags.contains(&Flag::Verbose) {
         env::set_var("RUST_LOG", "info");
         Builder::new()
@@ -29,6 +29,15 @@ fn main() {
                 Ok(())
             })
             .filter(None, LevelFilter::Info)
+            .init();
+    } else { // or else enable only error logging
+        env::set_var("RUST_LOG", "error");
+        Builder::new()
+            .format(|_, record| {
+                PROGRESS_BAR.println(format!("{}", record.args()));
+                Ok(())
+            })
+            .filter(None, LevelFilter::Error)
             .init();
     }
 

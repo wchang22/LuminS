@@ -20,7 +20,9 @@
     <tr><td><b>Supported on Unix-based platforms</b></td></tr>
     <tr><td><b>Extremely fast at synchronizing directories with large quantities of files</b></td></tr>
     <tr><td><b>Multithreaded copy, remove, and sync</b></td></tr>
+    <tr><td><b>A progress bar using <a href="https://github.com/mitsuhiko/indicatif">indicatif</a></b></td></tr>
 </table>
+
 
 ## Usage
 
@@ -127,3 +129,14 @@ $ cd LuminS
 $ cargo build --release
 ```
 
+## Install
+
+Using cargo,
+
+```bash
+$ cargo install lms
+```
+
+## Contributions
+
+Suggestions, issues, and pull requests are welcome!
