@@ -1,13 +1,10 @@
-use std::env;
 use std::process;
 
 use clap::{load_yaml, App};
-use env_logger::Builder;
-use log::LevelFilter;
 
 use lms::core;
-use lms::parse::{self, Flag, SubCommandType};
-use lms::PROGRESS_BAR;
+use lms::parse::{self, SubCommandType};
+use lms::progress::PROGRESS_BAR;
 
 fn main() {
     // Parse command args
@@ -20,26 +17,7 @@ fn main() {
         Err(_) => process::exit(1),
     };
 
-    // If verbose, enable info logging
-    if flags.contains(&Flag::Verbose) {
-        env::set_var("RUST_LOG", "info");
-        Builder::new()
-            .format(|_, record| {
-                PROGRESS_BAR.println(format!("{}", record.args()));
-                Ok(())
-            })
-            .filter(None, LevelFilter::Info)
-            .init();
-    } else { // or else enable only error logging
-        env::set_var("RUST_LOG", "error");
-        Builder::new()
-            .format(|_, record| {
-                PROGRESS_BAR.println(format!("{}", record.args()));
-                Ok(())
-            })
-            .filter(None, LevelFilter::Error)
-            .init();
-    }
+    parse::set_env(flags);
 
     // Call correct core function depending on subcommand
     let result = match sub_command.sub_command_type {
@@ -47,14 +25,14 @@ fn main() {
         SubCommandType::Remove => sub_command
             .dest
             .iter()
-            .map(|dest| core::remove(dest, flags.clone()))
+            .map(|dest| core::remove(dest, flags))
             .collect(),
         SubCommandType::Synchronize => {
             core::synchronize(sub_command.src.unwrap(), &sub_command.dest[0], flags)
         }
     };
 
-    // End and remove the progress bar
+    // End and remove progress bars
     PROGRESS_BAR.finish_and_clear();
 
     // If error, print to stderr and exit

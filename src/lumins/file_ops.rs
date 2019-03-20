@@ -1,9 +1,9 @@
 //! Contains utilities for copying, deleting, sorting, hashing files.
 
-use std::hash::BuildHasher;
-use std::marker::{Send, Sync};
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::fs::OpenOptions;
+use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
+use std::marker::Sync;
+use std::path::{Path, PathBuf};
 use std::{fs, io};
 
 use blake2::{Blake2b, Digest};
@@ -13,7 +13,7 @@ use rayon_hash::HashSet;
 use seahash;
 
 use crate::lumins::parse::Flag;
-use crate::PROGRESS_BAR;
+use crate::progress::PROGRESS_BAR;
 
 /// Interface for all file structs to perform common operations
 ///
@@ -56,6 +56,45 @@ impl File {
             path: PathBuf::from(path),
             size,
         }
+    }
+
+    #[allow(unused)]
+    #[allow(clippy::unused_io_amount)]
+    fn diff_copy(src: &PathBuf, dest: &PathBuf) -> Result<(), io::Error> {
+        if !Path::new(&dest).exists() {
+            fs::copy(&src, &dest)?;
+        }
+
+        const CHUNK_SIZE: usize = 10000;
+
+        let src_file = fs::File::open(&src)?;
+        let mut src_reader = BufReader::with_capacity(CHUNK_SIZE, &src_file);
+        let dest_file = OpenOptions::new()
+            .write(true)
+            .read(true)
+            .create(true)
+            .open(&dest)?;
+        dest_file.set_len(src_file.metadata()?.len())?;
+        let mut dest_reader = BufReader::with_capacity(CHUNK_SIZE, &dest_file);
+        let mut dest_writer = BufWriter::with_capacity(CHUNK_SIZE, &dest_file);
+
+        loop {
+            let mut src_buffer = [0; CHUNK_SIZE];
+            let mut dest_buffer = [0; CHUNK_SIZE];
+
+            if src_reader.read(&mut src_buffer)? == 0 {
+                break;
+            }
+            dest_reader.read(&mut dest_buffer)?;
+
+            if seahash::hash(&src_buffer) != seahash::hash(&dest_buffer) {
+                dest_writer.write(&src_buffer)?;
+            } else {
+                dest_writer.seek(SeekFrom::Current(CHUNK_SIZE as i64));
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -186,48 +225,15 @@ impl FileSets {
 /// * `dest`: base directory of the files to copy to, such that for all `file` in
 /// `files_to_compare`, `dest + file.path()` is the absolute path of the destination file
 /// * `flags`: set for Flag's
-pub fn compare_and_copy_files<'a, T, S, H>(
-    files_to_compare: T,
-    src: &str,
-    dest: &str,
-    flags: HashSet<Flag, H>,
-) where
+pub fn compare_and_copy_files<'a, T, S>(files_to_compare: T, src: &str, dest: &str, flags: Flag)
+where
     T: ParallelIterator<Item = &'a S>,
     S: FileOps + Sync + 'a,
-    H: BuildHasher + Sync + Send,
 {
-    let flags = Arc::new(flags);
     files_to_compare.for_each(|file| {
-        compare_and_copy_file(file, src, dest, Arc::clone(&flags));
+        compare_and_copy_file(file, src, dest, flags);
         PROGRESS_BAR.inc(2);
     });
-}
-
-/// Compares all files in `files_to_compare` in `src` with all files in `files_to_compare` in `dest`
-/// and copies them over if they are different, sequentially
-///
-/// # Arguments
-/// * `files_to_compare`: files to compare
-/// * `src`: base directory of the files to copy from, such that for all `file` in
-/// `files_to_compare`, `src + file.path()` is the absolute path of the source file
-/// * `dest`: base directory of the files to copy to, such that for all `file` in
-/// `files_to_compare`, `dest + file.path()` is the absolute path of the destination file
-/// * `flags`: set for Flag's
-pub fn compare_and_copy_files_sequential<'a, T, S, H>(
-    files_to_compare: T,
-    src: &str,
-    dest: &str,
-    flags: HashSet<Flag, H>,
-) where
-    T: IntoIterator<Item = &'a S>,
-    S: FileOps + Sync + 'a,
-    H: BuildHasher + Sync + Send,
-{
-    let flags = Arc::new(flags);
-    for file in files_to_compare {
-        compare_and_copy_file(file, src, dest, Arc::clone(&flags));
-        PROGRESS_BAR.inc(2);
-    }
 }
 
 /// Compares the given file and copies the src file over if it differs from the dest file
@@ -239,16 +245,11 @@ pub fn compare_and_copy_files_sequential<'a, T, S, H>(
 /// * `dest`: base directory of the files to copy to, such that `dest + file.path()`
 /// is the absolute path of the destination file
 /// * `flags`: set for Flag's
-fn compare_and_copy_file<S, H>(
-    file_to_compare: &S,
-    src: &str,
-    dest: &str,
-    flags: Arc<HashSet<Flag, H>>,
-) where
+fn compare_and_copy_file<S>(file_to_compare: &S, src: &str, dest: &str, flags: Flag)
+where
     S: FileOps,
-    H: BuildHasher + Sync + Send,
 {
-    if flags.contains(&Flag::Secure) {
+    if flags.contains(Flag::SECURE) {
         let src_file_hash_secure = hash_file_secure(file_to_compare, &src);
 
         if src_file_hash_secure.is_none() {
@@ -294,25 +295,6 @@ where
         copy_file(file, &src, &dest);
         PROGRESS_BAR.inc(1);
     });
-}
-
-/// Copies all given files from `src` to `dest` in sequentially
-///
-/// # Arguments
-/// * `files_to_copy`: files to copy
-/// * `src`: base directory of the files to copy from, such that for all `file` in
-/// `files_to_copy`, `src + file.path()` is the absolute path of the source file
-/// * `dest`: base directory of the files to copy to, such that for all `file` in
-/// `files_to_copy`, `dest + file.path()` is the absolute path of the destination file
-pub fn copy_files_sequential<'a, T, S>(files_to_copy: T, src: &str, dest: &str)
-where
-    T: IntoIterator<Item = &'a S>,
-    S: FileOps + Sync + 'a,
-{
-    for file in files_to_copy {
-        copy_file(file, &src, &dest);
-        PROGRESS_BAR.inc(1);
-    }
 }
 
 /// Copies a single file from `src` to `dest`
@@ -1256,7 +1238,6 @@ mod test_copy_files {
         fs::create_dir_all(TEST_DIR_OUT).unwrap();
 
         copy_files(HashSet::<File>::new().par_iter(), TEST_DIR, TEST_DIR_OUT);
-        copy_files_sequential(HashSet::<&File>::new().into_iter(), TEST_DIR, TEST_DIR_OUT);
 
         assert_eq!(
             get_all_files(TEST_DIR_OUT).unwrap(),
@@ -1275,10 +1256,8 @@ mod test_copy_files {
     fn regular_files_dirs() {
         const TEST_DIR: &str = "src";
         const TEST_DIR_OUT: &str = "test_copy_files_regular_files_dirs_out";
-        const TEST_DIR_OUT_SEQ: &str = "test_copy_files_regular_files_dirs_out_seq";
 
         fs::create_dir_all(TEST_DIR_OUT).unwrap();
-        fs::create_dir_all(TEST_DIR_OUT_SEQ).unwrap();
 
         copy_files(
             get_all_files(TEST_DIR).unwrap().dirs().par_iter(),
@@ -1289,17 +1268,6 @@ mod test_copy_files {
             get_all_files(TEST_DIR).unwrap().files().par_iter(),
             TEST_DIR,
             TEST_DIR_OUT,
-        );
-
-        copy_files_sequential(
-            get_all_files(TEST_DIR).unwrap().dirs().into_iter(),
-            TEST_DIR,
-            TEST_DIR_OUT_SEQ,
-        );
-        copy_files_sequential(
-            get_all_files(TEST_DIR).unwrap().files().into_iter(),
-            TEST_DIR,
-            TEST_DIR_OUT_SEQ,
         );
 
         assert_eq!(
@@ -1307,72 +1275,50 @@ mod test_copy_files {
             get_all_files(TEST_DIR).unwrap()
         );
 
-        assert_eq!(
-            get_all_files(TEST_DIR_OUT_SEQ).unwrap(),
-            get_all_files(TEST_DIR).unwrap()
-        );
-
         fs::remove_dir_all(TEST_DIR_OUT).unwrap();
-        fs::remove_dir_all(TEST_DIR_OUT_SEQ).unwrap();
     }
 
     #[test]
     #[cfg(target_family = "unix")]
     fn insufficient_output_permissions() {
         const TEST_DIR: &str = "src";
-        const TEST_DIR_OUT: [&str; 2] = [
-            "test_copy_files_insufficient_output_permissions_out",
-            "test_copy_files_insufficient_output_permissions_out_seq",
-        ];
+        const TEST_DIR_OUT: &str = "test_copy_files_insufficient_output_permissions_out";
         const SUB_DIR: &str = "lumins";
 
-        for &test_dir_out in TEST_DIR_OUT.iter() {
-            fs::create_dir_all([test_dir_out, SUB_DIR].join("/")).unwrap();
-            fs::File::create([test_dir_out, "main.rs"].join("/")).unwrap();
-            fs::File::create([test_dir_out, "cli.yml"].join("/")).unwrap();
-            fs::File::create([test_dir_out, "lib.rs"].join("/")).unwrap();
-            Command::new("chmod")
-                .arg("000")
-                .arg([test_dir_out, SUB_DIR].join("/"))
-                .output()
-                .unwrap();
-            Command::new("chmod")
-                .arg("000")
-                .arg([test_dir_out, "main.rs"].join("/"))
-                .output()
-                .unwrap();
-            Command::new("chmod")
-                .arg("000")
-                .arg([test_dir_out, "cli.yml"].join("/"))
-                .output()
-                .unwrap();
-            Command::new("chmod")
-                .arg("000")
-                .arg([test_dir_out, "lib.rs"].join("/"))
-                .output()
-                .unwrap();
-        }
+        fs::create_dir_all([TEST_DIR_OUT, SUB_DIR].join("/")).unwrap();
+        fs::File::create([TEST_DIR_OUT, "main.rs"].join("/")).unwrap();
+        fs::File::create([TEST_DIR_OUT, "cli.yml"].join("/")).unwrap();
+        fs::File::create([TEST_DIR_OUT, "lib.rs"].join("/")).unwrap();
+        Command::new("chmod")
+            .arg("000")
+            .arg([TEST_DIR_OUT, SUB_DIR].join("/"))
+            .output()
+            .unwrap();
+        Command::new("chmod")
+            .arg("000")
+            .arg([TEST_DIR_OUT, "main.rs"].join("/"))
+            .output()
+            .unwrap();
+        Command::new("chmod")
+            .arg("000")
+            .arg([TEST_DIR_OUT, "cli.yml"].join("/"))
+            .output()
+            .unwrap();
+        Command::new("chmod")
+            .arg("000")
+            .arg([TEST_DIR_OUT, "lib.rs"].join("/"))
+            .output()
+            .unwrap();
 
         copy_files(
             get_all_files(TEST_DIR).unwrap().dirs().par_iter(),
             TEST_DIR,
-            TEST_DIR_OUT[0],
+            TEST_DIR_OUT,
         );
         copy_files(
             get_all_files(TEST_DIR).unwrap().files().par_iter(),
             TEST_DIR,
-            TEST_DIR_OUT[0],
-        );
-
-        copy_files_sequential(
-            get_all_files(TEST_DIR).unwrap().dirs().into_iter(),
-            TEST_DIR,
-            TEST_DIR_OUT[1],
-        );
-        copy_files_sequential(
-            get_all_files(TEST_DIR).unwrap().files().into_iter(),
-            TEST_DIR,
-            TEST_DIR_OUT[1],
+            TEST_DIR_OUT,
         );
 
         let mut files = HashSet::new();
@@ -1393,36 +1339,30 @@ mod test_copy_files {
             path: PathBuf::from("lumins"),
         });
 
-        for i in 0..TEST_DIR_OUT.len() {
-            assert_eq!(
-                get_all_files(TEST_DIR_OUT[i]).unwrap(),
-                FileSets {
-                    files: files.clone(),
-                    dirs: dirs.clone(),
-                    symlinks: HashSet::new(),
-                }
-            );
+        assert_eq!(
+            get_all_files(TEST_DIR_OUT).unwrap(),
+            FileSets {
+                files: files.clone(),
+                dirs: dirs.clone(),
+                symlinks: HashSet::new(),
+            }
+        );
 
-            Command::new("rm")
-                .arg("-rf")
-                .arg(TEST_DIR_OUT[i])
-                .output()
-                .unwrap();
-        }
+        Command::new("rm")
+            .arg("-rf")
+            .arg(TEST_DIR_OUT)
+            .output()
+            .unwrap();
     }
 
     #[test]
     #[cfg(target_family = "unix")]
     fn insufficient_input_permissions() {
         const TEST_DIR: &str = "test_copy_files_insufficient_input_permissions";
-        const TEST_DIR_OUT: [&str; 2] = [
-            "test_copy_files_insufficient_input_permissions_out",
-            "test_copy_files_insufficient_input_permissions_out_seq",
-        ];
+        const TEST_DIR_OUT: &str = "test_copy_files_insufficient_input_permissions_out";
 
         fs::create_dir_all(TEST_DIR).unwrap();
-        fs::create_dir_all(TEST_DIR_OUT[0]).unwrap();
-        fs::create_dir_all(TEST_DIR_OUT[1]).unwrap();
+        fs::create_dir_all(TEST_DIR_OUT).unwrap();
 
         Command::new("cp")
             .args(&["-r", "src/lumins", TEST_DIR])
@@ -1446,22 +1386,12 @@ mod test_copy_files {
         copy_files(
             get_all_files(TEST_DIR).unwrap().dirs().par_iter(),
             TEST_DIR,
-            TEST_DIR_OUT[0],
+            TEST_DIR_OUT,
         );
         copy_files(
             get_all_files(TEST_DIR).unwrap().files().par_iter(),
             TEST_DIR,
-            TEST_DIR_OUT[0],
-        );
-        copy_files_sequential(
-            get_all_files(TEST_DIR).unwrap().dirs().into_iter(),
-            TEST_DIR,
-            TEST_DIR_OUT[1],
-        );
-        copy_files_sequential(
-            get_all_files(TEST_DIR).unwrap().files().into_iter(),
-            TEST_DIR,
-            TEST_DIR_OUT[1],
+            TEST_DIR_OUT,
         );
 
         let files = HashSet::new();
@@ -1471,18 +1401,10 @@ mod test_copy_files {
         });
 
         assert_eq!(
-            get_all_files(TEST_DIR_OUT[0]).unwrap(),
+            get_all_files(TEST_DIR_OUT).unwrap(),
             FileSets {
                 files: files.clone(),
                 dirs: dirs.clone(),
-                symlinks: HashSet::new(),
-            }
-        );
-        assert_eq!(
-            get_all_files(TEST_DIR_OUT[1]).unwrap(),
-            FileSets {
-                files,
-                dirs,
                 symlinks: HashSet::new(),
             }
         );
@@ -1497,11 +1419,7 @@ mod test_copy_files {
             .output()
             .unwrap();
         Command::new("rm")
-            .args(&["-rf", TEST_DIR_OUT[0]])
-            .output()
-            .unwrap();
-        Command::new("rm")
-            .args(&["-rf", TEST_DIR_OUT[1]])
+            .args(&["-rf", TEST_DIR_OUT])
             .output()
             .unwrap();
     }
@@ -1511,25 +1429,16 @@ mod test_copy_files {
     fn copy_symlink() {
         use std::os::unix::fs::symlink;
         const TEST_DIR: &str = "test_copy_files_copy_symlink";
-        const TEST_DIR_OUT: [&str; 2] = [
-            "test_copy_files_copy_symlink_out",
-            "test_copy_files_copy_symlink_out_seq",
-        ];
+        const TEST_DIR_OUT: &str = "test_copy_files_copy_symlink_out_seq";
 
         fs::create_dir_all(TEST_DIR).unwrap();
-        fs::create_dir_all(TEST_DIR_OUT[0]).unwrap();
-        fs::create_dir_all(TEST_DIR_OUT[1]).unwrap();
+        fs::create_dir_all(TEST_DIR_OUT).unwrap();
         symlink("src/main.rs", [TEST_DIR, "file"].join("/")).unwrap();
 
         copy_files(
             get_all_files(TEST_DIR).unwrap().symlinks().par_iter(),
             TEST_DIR,
-            TEST_DIR_OUT[0],
-        );
-        copy_files_sequential(
-            get_all_files(TEST_DIR).unwrap().symlinks().into_iter(),
-            TEST_DIR,
-            TEST_DIR_OUT[01],
+            TEST_DIR_OUT,
         );
 
         let mut links_set = HashSet::new();
@@ -1539,25 +1448,16 @@ mod test_copy_files {
         });
 
         assert_eq!(
-            get_all_files(TEST_DIR_OUT[0]).unwrap(),
+            get_all_files(TEST_DIR_OUT).unwrap(),
             FileSets {
                 files: HashSet::new(),
                 dirs: HashSet::new(),
                 symlinks: links_set.clone(),
             }
         );
-        assert_eq!(
-            get_all_files(TEST_DIR_OUT[1]).unwrap(),
-            FileSets {
-                files: HashSet::new(),
-                dirs: HashSet::new(),
-                symlinks: links_set,
-            }
-        );
 
         fs::remove_dir_all(TEST_DIR).unwrap();
-        fs::remove_dir_all(TEST_DIR_OUT[0]).unwrap();
-        fs::remove_dir_all(TEST_DIR_OUT[1]).unwrap();
+        fs::remove_dir_all(TEST_DIR_OUT).unwrap();
     }
 }
 
@@ -1568,21 +1468,13 @@ mod test_compare_and_copy_files {
     #[test]
     fn single_same() {
         const TEST_DIR: &str = "src";
-        const TEST_DIR_OUT: [&str; 2] = [
-            "test_compare_and_copy_files_single_same_out",
-            "test_compare_and_copy_files_single_same_out_seq",
-        ];
-        fs::create_dir_all(TEST_DIR_OUT[0]).unwrap();
-        fs::create_dir_all(TEST_DIR_OUT[1]).unwrap();
+        const TEST_DIR_OUT: &str = "test_compare_and_copy_files_single_same_out";
+
+        fs::create_dir_all(TEST_DIR_OUT).unwrap();
 
         fs::copy(
             [TEST_DIR, "main.rs"].join("/"),
-            [TEST_DIR_OUT[0], "main.rs"].join("/"),
-        )
-        .unwrap();
-        fs::copy(
-            [TEST_DIR, "main.rs"].join("/"),
-            [TEST_DIR_OUT[1], "main.rs"].join("/"),
+            [TEST_DIR_OUT, "main.rs"].join("/"),
         )
         .unwrap();
 
@@ -1594,60 +1486,32 @@ mod test_compare_and_copy_files {
         let mut files_to_compare = HashSet::new();
         files_to_compare.insert(file_to_compare.clone());
 
-        let mut files_to_compare_seq = HashSet::new();
-        files_to_compare_seq.insert(&file_to_compare);
-
-        let mut flags = HashSet::new();
-        flags.insert(Flag::Secure);
+        let mut flags = Flag::empty();
+        flags |= Flag::SECURE;
 
         compare_and_copy_files(
             files_to_compare.clone().par_iter(),
             TEST_DIR,
-            TEST_DIR_OUT[0],
-            HashSet::new(),
-        );
-        compare_and_copy_files_sequential(
-            files_to_compare_seq.clone().into_iter(),
-            TEST_DIR,
-            TEST_DIR_OUT[1],
-            HashSet::new(),
+            TEST_DIR_OUT,
+            Flag::empty(),
         );
 
-        compare_and_copy_files(
-            files_to_compare.par_iter(),
-            TEST_DIR,
-            TEST_DIR_OUT[0],
-            flags.clone(),
-        );
-        compare_and_copy_files_sequential(
-            files_to_compare_seq.into_iter(),
-            TEST_DIR,
-            TEST_DIR_OUT[1],
-            flags,
-        );
+        compare_and_copy_files(files_to_compare.par_iter(), TEST_DIR, TEST_DIR_OUT, flags);
 
-        let actual = fs::read([TEST_DIR_OUT[0], "main.rs"].join("/")).unwrap();
-        let actual_seq = fs::read([TEST_DIR_OUT[1], "main.rs"].join("/")).unwrap();
+        let actual = fs::read([TEST_DIR_OUT, "main.rs"].join("/")).unwrap();
         let expected = fs::read([TEST_DIR, "main.rs"].join("/")).unwrap();
         assert_eq!(actual, expected);
-        assert_eq!(actual_seq, expected);
 
-        fs::remove_dir_all(TEST_DIR_OUT[0]).unwrap();
-        fs::remove_dir_all(TEST_DIR_OUT[1]).unwrap();
+        fs::remove_dir_all(TEST_DIR_OUT).unwrap();
     }
 
     #[test]
     fn single_different() {
         const TEST_DIR: &str = "src";
-        const TEST_DIR_OUT: [&str; 2] = [
-            "test_compare_and_copy_files_single_different_out",
-            "test_compare_and_copy_files_single_different_out_seq",
-        ];
+        const TEST_DIR_OUT: &str = "test_compare_and_copy_files_single_different_out";
 
-        fs::create_dir_all(TEST_DIR_OUT[0]).unwrap();
-        fs::File::create([TEST_DIR_OUT[0], "main.rs"].join("/")).unwrap();
-        fs::create_dir_all(TEST_DIR_OUT[1]).unwrap();
-        fs::File::create([TEST_DIR_OUT[1], "main.rs"].join("/")).unwrap();
+        fs::create_dir_all(TEST_DIR_OUT).unwrap();
+        fs::File::create([TEST_DIR_OUT, "main.rs"].join("/")).unwrap();
 
         let file_to_compare = File {
             path: PathBuf::from("main.rs"),
@@ -1655,31 +1519,19 @@ mod test_compare_and_copy_files {
         };
         let mut files_to_compare = HashSet::new();
         files_to_compare.insert(file_to_compare.clone());
-        let mut files_to_compare_seq = HashSet::new();
-        files_to_compare_seq.insert(&file_to_compare);
 
         compare_and_copy_files(
             files_to_compare.par_iter(),
             TEST_DIR,
-            TEST_DIR_OUT[0],
-            HashSet::new(),
+            TEST_DIR_OUT,
+            Flag::empty(),
         );
 
-        compare_and_copy_files_sequential(
-            files_to_compare_seq.into_iter(),
-            TEST_DIR,
-            TEST_DIR_OUT[1],
-            HashSet::new(),
-        );
-
-        let actual = fs::read([TEST_DIR_OUT[0], "main.rs"].join("/")).unwrap();
-        let actual_seq = fs::read([TEST_DIR_OUT[1], "main.rs"].join("/")).unwrap();
+        let actual = fs::read([TEST_DIR_OUT, "main.rs"].join("/")).unwrap();
         let expected = fs::read([TEST_DIR, "main.rs"].join("/")).unwrap();
 
         assert_eq!(actual, expected);
-        assert_eq!(actual_seq, expected);
 
-        fs::remove_dir_all(TEST_DIR_OUT[0]).unwrap();
-        fs::remove_dir_all(TEST_DIR_OUT[1]).unwrap();
+        fs::remove_dir_all(TEST_DIR_OUT).unwrap();
     }
 }

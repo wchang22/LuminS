@@ -1,19 +1,24 @@
 //! Some utilities for command line parsing.
 
+use std::env;
 use std::fs;
 use std::path::PathBuf;
 
+use bitflags::bitflags;
 use clap::ArgMatches;
-use rayon_hash::HashSet;
+use env_logger::Builder;
+use log::LevelFilter;
 
-/// Enum to represent command line flags
-#[derive(Hash, Eq, PartialEq, Clone)]
-#[repr(u8)]
-pub enum Flag {
-    NoDelete,
-    Secure,
-    Verbose,
-    Sequential,
+use crate::progress::PROGRESS_BAR;
+
+bitflags! {
+    /// Enum to represent command line flags
+    pub struct Flag: u32 {
+        const NO_DELETE     = 0x1;
+        const SECURE        = 0x2;
+        const VERBOSE       = 0x4;
+        const SEQUENTIAL    = 0x8;
+    }
 }
 
 /// Enum to represent subcommand type
@@ -34,7 +39,7 @@ pub struct SubCommand<'a> {
 /// Struct to represent the result of parsing args
 pub struct ParseResult<'a> {
     pub sub_command: SubCommand<'a>,
-    pub flags: HashSet<Flag>,
+    pub flags: Flag,
 }
 
 /// Parses command line arguments for source and destination folders and
@@ -50,19 +55,13 @@ pub fn parse_args<'a>(args: &'a ArgMatches) -> Result<ParseResult<'a>, ()> {
     let sub_command_name = args.subcommand_name().unwrap();
     let args = args.subcommand_matches(sub_command_name).unwrap();
 
-    const FLAG_NAMES: [&str; 4] = ["verbose", "nodelete", "secure", "sequential"];
-    const FLAGS: [Flag; 4] = [
-        Flag::Verbose,
-        Flag::NoDelete,
-        Flag::Secure,
-        Flag::Sequential,
-    ];
+    const FLAG_NAMES: [&str; 4] = ["nodelete", "secure", "verbose", "sequential"];
 
     // Parse for flags
-    let mut flags = HashSet::new();
+    let mut flags = Flag::empty();
     for (i, &flag_name) in FLAG_NAMES.iter().enumerate() {
         if args.is_present(flag_name) {
-            flags.insert(FLAGS[i].clone());
+            flags |= Flag::from_bits_truncate(1 << i);
         }
     }
 
@@ -147,7 +146,7 @@ pub fn parse_args<'a>(args: &'a ArgMatches) -> Result<ParseResult<'a>, ()> {
                 // Create destination folder if not already existing
                 match fs::create_dir_all(&sub_command.dest[0]) {
                     Ok(_) => {
-                        if flags.contains(&Flag::Verbose) {
+                        if flags.contains(Flag::VERBOSE) {
                             println!("Creating dir {:?}", sub_command.dest[0]);
                         }
                     }
@@ -161,4 +160,28 @@ pub fn parse_args<'a>(args: &'a ArgMatches) -> Result<ParseResult<'a>, ()> {
     }
 
     Ok(ParseResult { sub_command, flags })
+}
+
+/// Sets up the environment based on given flags
+pub fn set_env(flags: Flag) {
+    let mut builder = Builder::new();
+    builder.format(|_, record| {
+        PROGRESS_BAR.println(format!("{}", record.args()));
+        Ok(())
+    });
+
+    // If verbose, enable info logging
+    if flags.contains(Flag::VERBOSE) {
+        env::set_var("RUST_LOG", "info");
+        builder.filter(None, LevelFilter::Info).init();
+    } else {
+        // or else enable only error logging
+        env::set_var("RUST_LOG", "error");
+        builder.filter(None, LevelFilter::Error).init();
+    }
+
+    // If sequential, set Rayon to use only 1 thread
+    if flags.contains(Flag::SEQUENTIAL) {
+        env::set_var("RAYON_NUM_THREADS", "1");
+    }
 }
