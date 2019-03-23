@@ -1,5 +1,5 @@
 name: LuminS
-version: "0.3.1"
+version: "0.3.2"
 about: Luminous Synchronize - A fast and reliable multithreaded alternative to rsync
   for synchronizing local files
 
