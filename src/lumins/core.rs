@@ -5,7 +5,7 @@ use std::io;
 use rayon::prelude::*;
 
 use crate::lumins::{file_ops, file_ops::Dir, parse::Flag};
-use crate::progress::PROGRESS_BAR;
+use crate::progress::{self, PROGRESS_BAR};
 
 /// Synchronizes all files, directories, and symlinks in `dest` with `src`
 ///
@@ -32,8 +32,8 @@ pub fn synchronize(src: &str, dest: &str, flags: Flag) -> Result<(), io::Error> 
     let dest_dirs = dest_file_sets.dirs();
     let dest_symlinks = dest_file_sets.symlinks();
 
-    // Create progress bar and set length
-    PROGRESS_BAR.set_length(
+    // Initialize progress bar
+    progress::progress_init(
         (src_files.len()
             + src_dirs.len()
             + src_symlinks.len()
@@ -41,7 +41,6 @@ pub fn synchronize(src: &str, dest: &str, flags: Flag) -> Result<(), io::Error> 
             + dest_dirs.len()
             + dest_symlinks.len()) as u64,
     );
-    PROGRESS_BAR.set_position(0);
 
     // Determine whether or not to delete
     let delete = !flags.contains(Flag::NO_DELETE);
@@ -94,9 +93,8 @@ pub fn copy(src: &str, dest: &str, _flags: Flag) -> Result<(), io::Error> {
     let src_dirs = src_file_sets.dirs();
     let src_symlinks = src_file_sets.symlinks();
 
-    // Create progress bar and set length
-    PROGRESS_BAR.set_length((src_files.len() + src_dirs.len() + src_symlinks.len()) as u64);
-    PROGRESS_BAR.set_position(0);
+    // Initialize progress bar
+    progress::progress_init((src_files.len() + src_dirs.len() + src_symlinks.len()) as u64);
 
     // Copy everything
     file_ops::copy_files(src_dirs.into_par_iter(), &src, &dest);
@@ -123,10 +121,11 @@ pub fn remove(target: &str, _flags: Flag) -> Result<(), io::Error> {
     let target_dirs = target_file_sets.dirs();
     let target_symlinks = target_file_sets.symlinks();
 
-    // Create progress bar and set length
-    PROGRESS_BAR
-        .set_length((target_files.len() + target_dirs.len() + target_symlinks.len()) as u64);
-    PROGRESS_BAR.set_position(0);
+    // Initialize progress bar
+    progress::progress_init(
+        (target_files.len() + target_dirs.len() + target_symlinks.len()) as u64,
+    );
+    PROGRESS_BAR.enable_steady_tick(1);
 
     // Delete everything
     file_ops::delete_files(target_files.into_par_iter(), &target);
