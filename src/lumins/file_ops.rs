@@ -156,6 +156,22 @@ impl FileOps for Symlink {
             Err(e) => error!("Error -- Creating symlink {:?}: {}", dest, e),
         }
     }
+    #[cfg(target_family = "windows")]
+    fn copy(&self, _src: &PathBuf, dest: &PathBuf) {
+        use std::os::windows::fs;
+        if self.target.is_file() {
+            match fs::symlink_file(&self.target, &dest) {
+                Ok(_) => info!("Creating symlink file {:?} -> {:?}", dest, self.target),
+                Err(e) => error!("Error -- Creating symlink file{:?}: {}", dest, e),
+            }
+        }
+        if self.target.is_dir() {
+            match fs::symlink_dir(&self.target, &dest) {
+                Ok(_) => info!("Creating symlink dir {:?} -> {:?}", dest, self.target),
+                Err(e) => error!("Error -- Creating symlink dir {:?}: {}", dest, e),
+            }
+        }
+    }
 }
 
 impl Symlink {
@@ -1458,6 +1474,50 @@ mod test_copy_files {
 
         fs::remove_dir_all(TEST_DIR).unwrap();
         fs::remove_dir_all(TEST_DIR_OUT).unwrap();
+    }
+
+    #[test]
+    #[cfg(target_family = "windows")]
+    fn copy_symlink() {
+        use std::os::windows::fs as wfs;
+        use std::env;
+        const TEST_DIR: &str = "test_copy_files_copy_symlink";
+        const TEST_DIR_OUT: &str = "test_copy_files_copy_symlink_out_seq";
+        let CURRENT_PATH: PathBuf = env::current_dir().unwrap();
+
+        fs::create_dir_all(TEST_DIR).unwrap();
+        fs::create_dir_all(TEST_DIR_OUT).unwrap();
+        wfs::symlink_file("src/main.rs", [TEST_DIR, "file"].join("/")).unwrap();
+        wfs::symlink_dir("src", [TEST_DIR, "dir"].join("/")).unwrap();
+
+        copy_files(
+            get_all_files(TEST_DIR).unwrap().symlinks().par_iter(),
+            TEST_DIR,
+            TEST_DIR_OUT,
+        );
+
+        let mut links_set = HashSet::new();
+        links_set.insert(Symlink {
+            path: PathBuf::from("file"),
+            target: PathBuf::from("src/main.rs"),
+        });
+
+        links_set.insert(Symlink {
+            path: PathBuf::from("dir"),
+            target: PathBuf::from("src/"),
+        });
+
+        assert_eq!(
+            get_all_files(TEST_DIR_OUT).unwrap(),
+            FileSets {
+                files: HashSet::new(),
+                dirs: HashSet::new(),
+                symlinks: links_set.clone(),
+            }
+        );
+
+       fs::remove_dir_all(TEST_DIR).unwrap();
+       fs::remove_dir_all(TEST_DIR_OUT).unwrap();
     }
 }
 
