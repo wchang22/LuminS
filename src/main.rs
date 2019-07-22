@@ -51,6 +51,12 @@ mod test_main {
     use std::fs;
     use std::process::Command;
 
+    #[cfg(debug_assertions)]
+    const BUILD_DIR: &str = "target/debug";
+
+    #[cfg(not(debug_assertions))]
+    const BUILD_DIR: &str = "target/release";
+
     #[test]
     fn test_no_args() {
         Command::new("cargo")
@@ -116,7 +122,7 @@ mod test_main {
             .output()
             .unwrap();
 
-        const TEST_SOURCE: &str = "target/debug";
+        const TEST_SOURCE: &str = BUILD_DIR;
         const TEST_DEST: &str = "test_main_test_copy";
 
         Command::new("target/release/lms")
@@ -142,7 +148,7 @@ mod test_main {
             .output()
             .unwrap();
 
-        const TEST_SOURCE: &str = "target/debug";
+        const TEST_SOURCE: &str = BUILD_DIR;
         const TEST_DEST: &str = "test_main_test_secure";
         fs::create_dir_all(TEST_DEST).unwrap();
 
@@ -169,7 +175,7 @@ mod test_main {
             .output()
             .unwrap();
 
-        const TEST_SOURCE: &str = "target/debug";
+        const TEST_SOURCE: &str = BUILD_DIR;
         const TEST_DEST: &str = "test_main_test_sequential";
 
         Command::new("target/release/lms")
@@ -195,7 +201,7 @@ mod test_main {
             .output()
             .unwrap();
 
-        const TEST_SOURCE: &str = "target/debug";
+        const TEST_SOURCE: &str = BUILD_DIR;
         const TEST_DEST: &str = "test_main_test_sequential_copy";
 
         Command::new("target/release/lms")
@@ -268,7 +274,7 @@ mod test_main {
             .output()
             .unwrap();
 
-        const TEST_SOURCE: &str = "target/debug";
+        const TEST_SOURCE: &str = BUILD_DIR;
         const TEST_DEST: &str = "test_main_test_remove";
         fs::create_dir_all(TEST_DEST).unwrap();
 
@@ -293,7 +299,7 @@ mod test_main {
             .output()
             .unwrap();
 
-        const TEST_SOURCE: &str = "target/debug";
+        const TEST_SOURCE: &str = BUILD_DIR;
         const TEST_DEST: [&str; 2] = ["test_main_test_remove1", "test_main_test_remove2"];
         fs::create_dir_all(TEST_DEST[0]).unwrap();
         fs::create_dir_all(TEST_DEST[1]).unwrap();
@@ -325,7 +331,7 @@ mod test_main {
             .output()
             .unwrap();
 
-        const TEST_SOURCE: &str = "target/debug";
+        const TEST_SOURCE: &str = BUILD_DIR;
         const TEST_DEST: &str = "test_main_test_sequential_remove";
         fs::create_dir_all(TEST_DEST).unwrap();
 

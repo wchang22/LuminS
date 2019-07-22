@@ -153,6 +153,12 @@ mod test_synchronize {
     use std::fs;
     use std::process::Command;
 
+    #[cfg(debug_assertions)]
+    const BUILD_DIR: &str = "target/debug";
+
+    #[cfg(not(debug_assertions))]
+    const BUILD_DIR: &str = "target/release";
+
     #[test]
     fn invalid_src() {
         assert_eq!(synchronize("/?", "src", Flag::empty()).is_err(), true);
@@ -188,34 +194,34 @@ mod test_synchronize {
         fs::create_dir_all(TEST_DIR).unwrap();
 
         assert_eq!(
-            synchronize("target/debug", TEST_DIR, Flag::empty()).is_ok(),
+            synchronize(BUILD_DIR, TEST_DIR, Flag::empty()).is_ok(),
             true
         );
 
         let diff = Command::new("diff")
-            .args(&["-r", "target/debug", TEST_DIR])
+            .args(&["-r", BUILD_DIR, TEST_DIR])
             .output()
             .unwrap();
 
         assert_eq!(diff.status.success(), true);
 
-        fs::File::create("target/debug/file.txt").unwrap();
-        fs::remove_dir_all("target/debug/build").unwrap();
+        fs::File::create([BUILD_DIR, "file.txt"].join("/")).unwrap();
+        fs::remove_dir_all([BUILD_DIR, "build"].join("/")).unwrap();
 
         let diff = Command::new("diff")
-            .args(&["-r", "target/debug", TEST_DIR])
+            .args(&["-r", BUILD_DIR, TEST_DIR])
             .output()
             .unwrap();
 
         assert_eq!(diff.status.success(), false);
 
         assert_eq!(
-            synchronize("target/debug", TEST_DIR, Flag::empty()).is_ok(),
+            synchronize(BUILD_DIR, TEST_DIR, Flag::empty()).is_ok(),
             true
         );
 
         let diff = Command::new("diff")
-            .args(&["-r", "target/debug", TEST_DIR])
+            .args(&["-r", BUILD_DIR, TEST_DIR])
             .output()
             .unwrap();
 
@@ -368,6 +374,12 @@ mod test_remove {
     use std::fs;
     use std::process::Command;
 
+    #[cfg(debug_assertions)]
+    const BUILD_DIR: &str = "target/debug";
+
+    #[cfg(not(debug_assertions))]
+    const BUILD_DIR: &str = "target/release";
+
     #[test]
     fn invalid_target() {
         assert_eq!(remove("/?", Flag::empty()).is_err(), true);
@@ -380,7 +392,7 @@ mod test_remove {
         fs::create_dir_all(TEST_DIR).unwrap();
 
         Command::new("cp")
-            .args(&["-r", "target/debug", TEST_DIR])
+            .args(&["-r", BUILD_DIR, TEST_DIR])
             .output()
             .unwrap();
 
