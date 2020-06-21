@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 use std::{fs, io};
 
 use blake2::{Blake2b, Digest};
+use hashbrown::HashSet;
 use log::{error, info};
 use rayon::prelude::*;
-use rayon_hash::HashSet;
 use seahash;
 
 use crate::lumins::parse::Flag;
@@ -446,7 +446,7 @@ where
             let mut hasher = Blake2b::new();
 
             match io::copy(file, &mut hasher) {
-                Ok(_) => Some(hasher.result().to_vec()),
+                Ok(_) => Some(hasher.finalize().to_vec()),
                 Err(e) => {
                     error!("Error -- Hashing: {:?}: {}", file_to_hash.path(), e);
                     None
