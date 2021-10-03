@@ -27,6 +27,19 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
 
+      - name: Cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ./target/
+          key: "cache-OS:${{ matrix.os }}-Rust:${{ matrix.rust }}-${{ hashFiles('./Cargo.toml') }}-${{ hashFiles('./Cargo.lock') }}"
+          restore-keys: |
+               "cache-OS:${{ matrix.os }}-Rust:${{ matrix.rust }}"
+
       - name: Build
         run: |
           cargo build
