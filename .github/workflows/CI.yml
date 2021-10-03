@@ -1,0 +1,36 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+jobs:
+  Test:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-20.04
+          - windows-2019
+          - macos-10.15
+        rust:
+          - 1.55.0
+          - nightly
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+
+      - name: Build
+        run: |
+          cargo build
+
+      - name: Test
+        run: |
+          cargo test
