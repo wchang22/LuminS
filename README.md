@@ -9,7 +9,7 @@
   <a href="https://docs.rs/lms"><img src="https://docs.rs/lms/badge.svg" alt="Docs" /></a>
 </p>
 <p align="center">
-  <img src="examples/lumins.gif" alt="Demo"    
+  <img src="examples/lumins.gif" alt="Demo"
 </p>
 
 ## Features
@@ -17,7 +17,7 @@
 <table>
     <tr><td><b>100% Rust</b></td></tr>
     <tr><td><b>Powered by the <a href="https://github.com/rayon-rs/rayon">Rayon</a> library for high parallel perfomance</b></td></tr>
-    <tr><td><b>Supported on Unix-based platforms</b></td></tr>
+    <tr><td><b>Supported on Unix-based platforms or Windows</b></td></tr>
     <tr><td><b>Extremely fast at synchronizing directories with large quantities of files</b></td></tr>
     <tr><td><b>Multithreaded copy, remove, and sync</b></td></tr>
     <tr><td><b>A progress bar using <a href="https://github.com/mitsuhiko/indicatif">indicatif</a></b></td></tr>

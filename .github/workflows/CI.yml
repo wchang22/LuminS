@@ -47,3 +47,16 @@ jobs:
       - name: Test
         run: |
           cargo test
+
+      - name: Release
+        if: github.event_name == 'release' && !contains(matrix.rust, 'nightly')
+        run: |
+          cargo build --release
+
+      - name: Upload release binaries
+        uses: actions/upload-artifact@v2
+        if: github.event_name == 'release' && !contains(matrix.rust, 'nightly')
+        with:
+          name: lms-${{ matrix.os }}
+          path: |
+            target/release/lms*
