@@ -3,7 +3,7 @@
 <h4 align="center">A fast and reliable alternative to rsync for synchronizing local files</h4>
 
 <p align="center">
-  <a href="https://travis-ci.org/wchang22/LuminS"><img src="https://travis-ci.org/wchang22/LuminS.svg?branch=master" alt="Build Status" /></a>
+  <a href="https://app.travis-ci.com/github/wchang22/LuminS"><img src="https://app.travis-ci.com/wchang22/LuminS.svg?branch=master" alt="Build Status" /></a>
   <a href="https://codecov.io/gh/wchang22/LuminS"><img src="https://codecov.io/gh/wchang22/LuminS/branch/master/graph/badge.svg" alt="Code Coverage" /></a>
   <a href="https://crates.io/crates/lms"><img src="http://meritbadge.herokuapp.com/lms" alt="Crate" /></a>
   <a href="https://docs.rs/lms"><img src="https://docs.rs/lms/badge.svg" alt="Docs" /></a>
