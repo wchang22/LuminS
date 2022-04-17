@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       os: '["ubuntu-20.04", "windows-2019", "macos-10.15"]'
-      rust: '["1.55.0", "nightly"]'
+      rust: '["stable", "nightly"]'
     steps:
       - run: |
 
