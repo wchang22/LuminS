@@ -1,0 +1,135 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+jobs:
+  matrix:
+    name: Define Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      os: '["ubuntu-20.04", "windows-2019", "macos-10.15"]'
+      rust: '["stable", "nightly"]'
+    steps:
+      - run: |
+
+  test:
+    needs: matrix
+    name: "Run Tests"
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(needs.matrix.outputs.os) }}
+        rust: ${{ fromJSON(needs.matrix.outputs.rust) }}
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+
+      - name: Cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ./target/
+          key: "cache-OS:${{ matrix.os }}-Rust:${{ matrix.rust }}-${{ hashFiles('./Cargo.toml') }}-${{ hashFiles('./Cargo.lock') }}"
+          restore-keys: |
+               "cache-OS:${{ matrix.os }}-Rust:${{ matrix.rust }}"
+
+      - name: Build
+        run: |
+          cargo build
+
+      - name: Test
+        run: |
+          cargo test
+
+  release:
+    needs:
+      - matrix
+      - test
+    name: Create a Release
+    if: github.event_name == 'release'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(needs.matrix.outputs.os) }}
+        rust:
+          - ${{ fromJSON(needs.matrix.outputs.rust)[0] }}
+        
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+
+      - name: Build
+        run: |
+          cargo build --release
+          
+      - name: Upload release binaries
+        uses: actions/upload-artifact@v2
+        with:
+          name: lms-${{ matrix.os }}
+          path: |
+            target/release/lms*
+            
+  coverage:
+    needs:
+      - matrix
+      - test
+    name: Generate Coverage Report
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ${{ fromJSON(needs.matrix.outputs.os)[0] }}
+        rust:
+          - ${{ fromJSON(needs.matrix.outputs.rust)[0] }}
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          
+      - name: Cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ./target/
+          key: "cache:coverage-OS:${{ matrix.os }}-Rust:${{ matrix.rust }}-${{ hashFiles('./Cargo.toml') }}-${{ hashFiles('./Cargo.lock') }}"
+          restore-keys: |
+               "cache:coverage-OS:${{ matrix.os }}-Rust:${{ matrix.rust }}"
+               
+      - name: Install tarpaulin
+        run: |
+          cargo install cargo-tarpaulin
+
+      - name: Generate code coverage
+        run: cargo tarpaulin --timeout 300 --out Xml
+
+      - name: Upload to codecov.io
+        uses: codecov/codecov-action@v2
+        with:
+          fail_ci_if_error: true
+        
