@@ -5,12 +5,14 @@
 <p align="center">
   <a href="https://travis-ci.org/wchang22/LuminS"><img src="https://travis-ci.org/wchang22/LuminS.svg?branch=master" alt="Build Status" /></a>
   <a href="https://codecov.io/gh/wchang22/LuminS"><img src="https://codecov.io/gh/wchang22/LuminS/branch/master/graph/badge.svg" alt="Code Coverage" /></a>
-  <a href="https://crates.io/crates/lms"><img src="http://meritbadge.herokuapp.com/lms" alt="Crate" /></a>
+  <a href="https://crates.io/crates/lms"><img src="https://img.shields.io/crates/v/lms.svg" alt="Crate" /></a>
   <a href="https://docs.rs/lms"><img src="https://docs.rs/lms/badge.svg" alt="Docs" /></a>
 </p>
 <p align="center">
   <img src="examples/lumins.gif" alt="Demo"
 </p>
+
+<h3 align="center"><b>Note</b>: This project is no longer actively maintained. Pull requests are still welcome.</h3>
 
 ## Features
 
